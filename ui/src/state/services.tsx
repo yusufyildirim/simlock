@@ -1,6 +1,7 @@
 import { createContext, type ReactNode, useContext } from "react";
 
 import type { ApiClient, Fetch } from "../data/api";
+import { type OpenInputSocket, openBrowserInputSocket } from "../data/input";
 import type { Preferences } from "../data/preferences";
 import type { Session } from "../data/session";
 import type { ConfirmSpec, ToastSpec } from "../ds";
@@ -10,6 +11,8 @@ interface ConsoleServices {
   readonly fetch: Fetch;
   readonly preferences: Preferences;
   readonly session: Session;
+  // why: a test plays the daemon's end of a lease's input socket; the page opens a browser's.
+  readonly openInputSocket?: OpenInputSocket | undefined;
   // why: plain functions the app passes in, so state raises a toast or a dialog without knowing
   // what draws it.
   readonly notify: (toast: ToastSpec) => void;
@@ -51,4 +54,8 @@ export function useNotify(): ConsoleServices["notify"] {
 
 export function useConfirm(): ConsoleServices["confirm"] {
   return useServices().confirm;
+}
+
+export function useOpenInputSocket(): OpenInputSocket {
+  return useServices().openInputSocket ?? openBrowserInputSocket;
 }

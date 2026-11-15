@@ -8,7 +8,12 @@ import type { Duplex } from "node:stream";
 import { WebSocketServer, type RawData, type WebSocket } from "ws";
 
 import { type Clock, SystemClock } from "./clock.js";
-import type { LeaseSocket, LeaseSocketAccept } from "./lease-socket.js";
+import {
+  BEARER_PROTOCOL_PREFIX,
+  LEASE_SOCKET_PROTOCOL,
+  type LeaseSocket,
+  type LeaseSocketAccept,
+} from "./lease-socket.js";
 import { UPLINK_PATH } from "./uplink.js";
 
 export type LeaseSocketOutcome =
@@ -41,7 +46,11 @@ const MAX_MESSAGE_BYTES = 1024 * 1024;
 export function createUpgradeRouter(options: UpgradeRouterOptions): {
   readonly attach: (server: Server) => void;
 } {
-  const sockets = new WebSocketServer({ maxPayload: MAX_MESSAGE_BYTES, noServer: true });
+  const sockets = new WebSocketServer({
+    handleProtocols: chooseProtocol,
+    maxPayload: MAX_MESSAGE_BYTES,
+    noServer: true,
+  });
   const clock = options.clock ?? new SystemClock();
   const upgrade = (request: IncomingMessage, socket: Duplex, head: Buffer): void => {
     const path = (request.url ?? "").split("?")[0] ?? "";
@@ -54,6 +63,16 @@ export function createUpgradeRouter(options: UpgradeRouterOptions): {
     }
   };
   return { attach: (server) => server.on("upgrade", upgrade) };
+}
+
+// why: `ws` on its own answers the first protocol offered, which would echo a browser's token back in
+// the handshake; `simlock` is preferred, and an item carrying a token is never chosen.
+function chooseProtocol(offered: Set<string>): string | false {
+  if (offered.has(LEASE_SOCKET_PROTOCOL)) return LEASE_SOCKET_PROTOCOL;
+  for (const protocol of offered) {
+    if (!protocol.startsWith(BEARER_PROTOCOL_PREFIX)) return protocol;
+  }
+  return false;
 }
 
 async function leaseUpgrade(

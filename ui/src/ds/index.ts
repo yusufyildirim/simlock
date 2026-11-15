@@ -19,6 +19,7 @@ export type { Paging } from "./pager";
 export { DesignProvider } from "./provider";
 export { Card, Empty, Id, Panel } from "./panel";
 export { AppFrame, Page, Sidebar, Wordmark } from "./sidebar";
+export { RemotePad } from "./remote-pad";
 export { SearchField } from "./search-field";
 export { Slots } from "./slots";
 export { StatRow, StatTile } from "./stat";

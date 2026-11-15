@@ -1,6 +1,7 @@
 import { useState, useSyncExternalStore } from "react";
 
 import type { ApiClient, Fetch } from "../data/api";
+import type { OpenInputSocket } from "../data/input";
 import type { Preferences } from "../data/preferences";
 import type { Session } from "../data/session";
 import {
@@ -24,6 +25,7 @@ export function App(props: {
   readonly fetch: Fetch;
   readonly preferences: Preferences;
   readonly session: Session;
+  readonly openInputSocket?: OpenInputSocket;
 }) {
   const { session } = props;
   const [toaster] = useState(createToaster);

@@ -4,6 +4,7 @@ import { vi } from "vitest";
 
 import { App } from "../app/app";
 import { createApiClient, type Fetch } from "../data/api";
+import type { InputSocketEvents, OpenInputSocket } from "../data/input";
 import { createPreferences } from "../data/preferences";
 import { createSession } from "../data/session";
 import { NOW } from "./fixtures";
@@ -119,6 +120,52 @@ function callOf(url: URL, init: Parameters<Fetch>[1]): Call {
   };
 }
 
+// why: a lease's input socket as the test plays the daemon: `sent` holds what the console wrote, each
+// a tag and its JSON, and `admit`, `config` and `close` say what the daemon answers.
+interface FakeInputSocket {
+  readonly url: string;
+  readonly protocols: readonly string[];
+  readonly sent: { readonly tag: number; readonly body: unknown }[];
+  closed: boolean;
+  admit(config?: Readonly<Record<string, unknown>>): void;
+  close(code: number, reason?: string): void;
+}
+
+function fakeInputSockets(): { open: OpenInputSocket; sockets: FakeInputSocket[] } {
+  const sockets: FakeInputSocket[] = [];
+  const open: OpenInputSocket = (url, protocols, events: InputSocketEvents) => {
+    const frame = (tag: number, body: unknown) =>
+      events.message(new Uint8Array([tag, ...new TextEncoder().encode(JSON.stringify(body))]));
+    const socket: FakeInputSocket = {
+      admit(config = { height: 1080, orientation: "portrait", width: 1920 }) {
+        events.message(new Uint8Array([0x83]));
+        frame(0x82, config);
+      },
+      close(code, reason = "") {
+        socket.closed = true;
+        events.close(code, reason);
+      },
+      closed: false,
+      protocols,
+      sent: [],
+      url,
+    };
+    sockets.push(socket);
+    return {
+      close: () => {
+        socket.closed = true;
+      },
+      send: (bytes) => {
+        socket.sent.push({
+          body: JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as unknown,
+          tag: bytes[0] ?? -1,
+        });
+      },
+    };
+  };
+  return { open, sockets };
+}
+
 export function renderConsole(options: ConsoleOptions = {}) {
   vi.useFakeTimers({
     now: NOW,
@@ -169,7 +216,16 @@ export function renderConsole(options: ConsoleOptions = {}) {
   const user = userEvent.setup(
     options.fakeTimers === true ? { advanceTimers: vi.advanceTimersByTime.bind(vi) } : {},
   );
-  const view = render(<App api={api} fetch={fetch} preferences={preferences} session={session} />);
+  const input = fakeInputSockets();
+  const view = render(
+    <App
+      api={api}
+      fetch={fetch}
+      openInputSocket={input.open}
+      preferences={preferences}
+      session={session}
+    />,
+  );
 
   return {
     ...view,
@@ -188,6 +244,8 @@ export function renderConsole(options: ConsoleOptions = {}) {
         for (const stream of streams.splice(0)) stream.close();
       },
     },
+    // why: every input socket the console opened, oldest first.
+    inputSockets: input.sockets,
     session,
     unanswered,
     user,

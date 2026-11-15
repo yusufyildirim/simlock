@@ -1,3 +1,9 @@
+// why: a browser's WebSocket cannot set `Authorization`, so the console offers its token as one of
+// the socket's subprotocols, `simlock.bearer.<token>`, beside `simlock` (ADR 0077). The router answers
+// `simlock` and never an item that carries a token; the token strategy reads it on an upgrade only.
+export const LEASE_SOCKET_PROTOCOL = "simlock";
+export const BEARER_PROTOCOL_PREFIX = "simlock.bearer.";
+
 // why: the port a module's lease socket handler talks to, so no module imports `ws` (only the upgrade
 // router and the uplink adapter do). Messages are binary; a close carries a code and a reason the
 // caller has already cut to 123 bytes.

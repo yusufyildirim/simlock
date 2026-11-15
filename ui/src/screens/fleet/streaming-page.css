@@ -255,3 +255,22 @@
   overflow-wrap: anywhere;
   user-select: text;
 }
+
+/* The remote's card: the pad centred, its sentence under it. */
+.stream-remote > .panel-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.stream-remote-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.stream-stage:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

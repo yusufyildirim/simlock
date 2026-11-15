@@ -62,9 +62,13 @@ interface OpenedSocket {
 async function openInput(
   url: string,
   token: string | undefined,
-  options: { readonly autoPong?: boolean; readonly headers?: Record<string, string> } = {},
+  options: {
+    readonly autoPong?: boolean;
+    readonly headers?: Record<string, string>;
+    readonly protocols?: readonly string[];
+  } = {},
 ): Promise<OpenedSocket> {
-  const socket = new WebSocket(url, {
+  const socket = new WebSocket(url, options.protocols === undefined ? [] : [...options.protocols], {
     autoPong: options.autoPong ?? true,
     headers: {
       ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
@@ -365,6 +369,32 @@ describe("a lease's input socket", () => {
         code: "INPUT_UNAVAILABLE",
         status: 503,
       });
+    },
+  );
+
+  it(
+    "admits a browser's socket that carries its token as the subprotocol simlock.bearer.<token>, on a worker and through a gateway, and answers simlock",
+    { timeout: 60_000 },
+    async () => {
+      for (const daemon of [
+        await standalone(),
+        await fleet({ gatewayInput: true, workerInput: true }),
+      ]) {
+        const opened = await openInput(daemon.inputUrl(), undefined, {
+          protocols: ["simlock", `simlock.bearer.${daemon.operator}`],
+        });
+        expect(opened.status).toBe(101);
+        expect(opened.socket.protocol).toBe("simlock");
+        await vi.waitFor(() => expect(tags(opened)).toEqual([0x83, 0x82]), { timeout: 10_000 });
+
+        const other = await openInput(daemon.inputUrl(), undefined, {
+          protocols: ["simlock", `simlock.bearer.${daemon.other}`],
+        });
+        expect({ code: other.code, status: other.status }).toEqual({
+          code: "UNKNOWN_LEASE",
+          status: 404,
+        });
+      }
     },
   );
 

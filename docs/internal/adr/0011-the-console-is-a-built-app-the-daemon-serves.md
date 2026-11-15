@@ -1,6 +1,6 @@
 # 0011. The console is a built app the daemon serves at `/`
 
-- **Status:** Accepted
+- **Status:** Accepted; §6 narrowed by [ADR 0077](0077-a-browser-sends-its-token-on-a-lease-socket-as-a-subprotocol.md): the console also sends its token as a subprotocol on a lease's input socket
 - **Date:** 2026-10-02
 - **Issue:** [#88](https://github.com/callstackincubator/simlock/issues/88)
 - **Supersedes:** nothing.

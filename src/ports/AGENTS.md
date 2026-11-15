@@ -21,6 +21,7 @@ Lazy loading:
   load it statically, so they stay out of the barrel (`index.ts`); tests get the uplink adapters
   from `testing.ts`. The last loads it with `import()` on its first `connect`, so in the CLI and
   the MCP server only `simlock tunnel` ever loads it.
+- The upgrade router answers a lease socket's subprotocol itself (`chooseProtocol`): `simlock` when offered, never a `simlock.bearer.` item, which carries a token (ADR 0077). `ws` alone would echo the first one offered.
 - `sqlite.ts` is the only file that names `node:sqlite`, loaded with a dynamic `import()` on first
   open. On a Node without it `open` throws `SqliteUnavailableError`.
 - `filterSqliteExperimentalWarning` drops Node's one SQLite `ExperimentalWarning` and no other. A

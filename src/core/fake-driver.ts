@@ -313,6 +313,10 @@ export class FakeDriver implements Driver {
     return osVersion;
   }
 
+  componentOf(spec: Pick<VirtualSpec, "model" | "osVersion">): string {
+    return spec.osVersion;
+  }
+
   async findComponent(component: string): Promise<InstalledComponent | undefined> {
     await this.#beforeCall("findComponent", component);
     return this.#installed(component);

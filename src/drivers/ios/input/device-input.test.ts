@@ -46,14 +46,14 @@ class RecordingLogger implements Logger {
   }
 }
 
-function setup(inOwnSet = true) {
+function setup(inOwnSet = true, homeApp = "com.apple.springboard") {
   const logger = new RecordingLogger();
   const launcher = new FakeBytePipeLauncher();
   const clock = new FakeClock();
   const processRunner = new ScriptedProcessRunner([
     {
       match: {
-        args: ["simctl", "--set", DEVICE_SET, "launch", "UDID-1", "com.apple.springboard"],
+        args: ["simctl", "--set", DEVICE_SET, "launch", "UDID-1", homeApp],
         command: "xcrun",
       },
       result: { code: 0, stderr: "", stdout: "" },
@@ -177,6 +177,44 @@ describe("iOS device input", () => {
         { body: { orientation: "landscape_left" }, tag: 0x07 },
       ]);
     }
+  });
+
+  it("an Apple TV simulator takes keys on any tvOS version, maps back to Menu and home to HeadBoard, and drops touches, scrolls and rotations", async () => {
+    const { factory, launcher, processRunner } = setup(true, "com.apple.HeadBoard");
+    const opening = factory.open(
+      simulator("com.apple.CoreSimulator.SimRuntime.tvOS-27-0"),
+      new AbortController().signal,
+    );
+    launcher.last.write(envelope(INPUT_TAG.config, { height: 2160, width: 3840 }));
+    const input = (await opening) as DeviceInput;
+    const configs: InputScreenConfig[] = [];
+    input.onConfig((config) => configs.push(config));
+    expect(configs).toEqual([{ height: 2160, orientation: "portrait", width: 3840 }]);
+
+    await input.send({ kind: "touch", type: "begin", x: 0.5, y: 0.25 });
+    await input.send({ dx: 0, dy: 0.5, kind: "scroll", x: 0.5, y: 0.25 });
+    await input.send({ kind: "orientation", orientation: "portrait" });
+    await input.send({ button: "app_switcher", kind: "button" });
+    await input.send({ button: "lock", kind: "button" });
+    await input.send({ kind: "key", type: "down", usage: 0x4f });
+    await input.send({ kind: "key", type: "up", usage: 0x4f });
+    await input.send({ button: "back", kind: "button" });
+    expect(decoded(launcher.last.stdinWrites)).toEqual([
+      { body: { type: "down", usage: 0x4f }, tag: INPUT_TAG.key },
+      { body: { type: "up", usage: 0x4f }, tag: INPUT_TAG.key },
+      { body: { type: "down", usage: 0x29 }, tag: INPUT_TAG.key },
+      { body: { type: "up", usage: 0x29 }, tag: INPUT_TAG.key },
+    ]);
+    expect(processRunner.calls).toEqual([]);
+
+    await input.send({ button: "home", kind: "button" });
+    expect(processRunner.calls).toEqual([
+      {
+        args: ["simctl", "--set", DEVICE_SET, "launch", "UDID-1", "com.apple.HeadBoard"],
+        command: "xcrun",
+        options: { timeoutMs: 10_000 },
+      },
+    ]);
   });
 
   it("a socket left open across a fold tells every listener the new panel's size, a late listener the latest, and a repeated or malformed frame nothing", async () => {

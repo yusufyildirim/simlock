@@ -4,11 +4,11 @@
 
 ### One device per agent
 
-Simlock leases iOS simulators, Android emulators and enrolled phones to coding agents that run in
-parallel. An agent asks for a device and gets one back, booted and checked, that no other agent
-touches until it is released. Simlock creates devices when none is free, queues requests when the
-machine is full, and cleans up devices nobody uses. Start on one Mac; put more Macs and Linux
-machines behind a gateway when one is not enough.
+Simlock leases iOS and Apple TV simulators, Android and Android TV emulators, and enrolled phones to
+coding agents that run in parallel. An agent asks for a device and gets one back, booted and
+checked, that no other agent touches until it is released. Simlock creates devices when none is
+free, queues requests when the machine is full, and cleans up devices nobody uses. Start on one Mac;
+put more Macs and Linux machines behind a gateway when one is not enough.
 
 ```sh
 npm i -g simlock

@@ -1,4 +1,5 @@
 import { DriverCrashError, type ObservedRunState } from "../../core/index.js";
+import { familyOfRuntime, type RuntimeFamily } from "./runtime-family.js";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -19,6 +20,7 @@ export interface DeviceType {
 export interface Runtime {
   readonly identifier: string;
   readonly name: string;
+  readonly family: RuntimeFamily;
   readonly version: string;
   readonly build?: string;
   readonly isAvailable: boolean;
@@ -111,15 +113,18 @@ function parseRuntime(value: unknown): readonly Runtime[] {
     typeof value.identifier !== "string" ||
     typeof value.name !== "string" ||
     typeof value.version !== "string" ||
-    typeof value.isAvailable !== "boolean" ||
-    !value.name.toLocaleLowerCase().startsWith("ios ")
+    typeof value.isAvailable !== "boolean"
   ) {
     return [];
   }
+  // why: a watchOS or visionOS runtime is no family the driver serves, so it is not listed at all.
+  const family = familyOfRuntime(value.platform, value.name);
+  if (family === undefined) return [];
 
   return [
     {
       ...(typeof value.buildversion === "string" ? { build: value.buildversion } : {}),
+      family,
       identifier: value.identifier,
       isAvailable: value.isAvailable,
       name: value.name,

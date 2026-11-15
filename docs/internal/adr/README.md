@@ -48,7 +48,7 @@ the status is stale.
 | [0007](0007-a-lease-request-chooses-the-device-mode.md) | A lease request chooses the device mode | Accepted |
 | [0008](0008-the-catalog-pairs-models-with-runtimes-and-status-carries-host-facts.md) | The catalog pairs models with runtimes, and status carries host facts | Accepted; §3 narrowed by 0025 on Android |
 | [0009](0009-gateway-routing-is-a-list-of-stages.md) | Gateway routing is a list of stages, and a request that cannot be served fails at once | Accepted — partly implemented: §6's `defaultRuntime` rule |
-| [0010](0010-components-have-one-owner-in-the-core.md) | Components are installed, recorded and removed through one owner in the core | Accepted |
+| [0010](0010-components-have-one-owner-in-the-core.md) | Components are installed, recorded and removed through one owner in the core | Accepted; §1 narrowed by 0076 |
 | [0011](0011-the-console-is-a-built-app-the-daemon-serves.md) | The console is a built app the daemon serves at `/` | Accepted |
 | [0012](0012-a-worker-answers-the-fleet-operations-as-a-fleet-of-one.md) | A worker answers the fleet operations as a fleet of one | Accepted |
 | [0013](0013-the-console-reads-routes-and-follows-the-event-stream.md) | The console reads the routes and follows the event stream | Accepted; §3 superseded by 0044 |
@@ -110,3 +110,4 @@ the status is stale.
 | [0073](0073-a-worker-may-enrol-the-phones-plugged-into-it.md) | A worker may enrol the phones plugged into it | Accepted; narrows 0022 §3, §5 and §6 |
 | [0074](0074-an-admission-command-ranks-or-refuses-a-gateway-request-and-an-ended-chosen-lease-id-is-remembered.md) | An admission command ranks or refuses a gateway request, and an ended chosen lease id is remembered | Accepted; narrows 0005 items 10 and 11, decision 5 and requirements 14 and 30; supersedes 0020 §1 in part |
 | [0075](0075-a-foldable-simulator-streams-the-panel-in-use-and-a-stream-may-change-size.md) | A foldable simulator streams the panel in use, and a stream may change size while it runs | Accepted; narrows 0031's Consequences and 0052 §4 |
+| [0076](0076-an-apple-tv-is-an-ios-simulator-of-class-tv-and-its-runtime-a-tvos-component.md) | An Apple TV is an iOS simulator of class tv, and its runtime is a `tvOS-` component | Accepted; narrows 0010 §1 |

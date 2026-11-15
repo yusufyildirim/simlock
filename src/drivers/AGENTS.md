@@ -8,6 +8,7 @@ Flows: [device selection](../../docs/internal/flows/device-selection.md), [Andro
 What core may assume of a driver (`core/driver.ts` `Driver`):
 
 - `resolveSpec` never downloads: it throws `RuntimeMissingError` with `component` when a download could fix it.
+- `componentOf(spec)` names the component a device runs on, as `listComponents` names it: two runtimes of one platform can share a version (iOS 27.0 and tvOS 27.0, ADR 0076).
 - Core calls `reclaim` for a physical device only. A virtual device is destroyed when its lease ends, and both drivers throw on its `reclaim`.
 - A source (ADR 0061) is never leased; a seed is copied into every virtual device.
 - Only core's `ComponentInstaller` installs or removes a component.

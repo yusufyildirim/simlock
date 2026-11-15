@@ -372,6 +372,10 @@ export class OutOfProcessFakeDriver implements Driver {
     ];
   }
 
+  componentOf(spec: Pick<VirtualSpec, "model" | "osVersion">): string {
+    return spec.osVersion;
+  }
+
   async findComponent(component: string): Promise<InstalledComponent | undefined> {
     const script = await this.#beforeCall("findComponent", [component]);
     return this.#find(component, script);

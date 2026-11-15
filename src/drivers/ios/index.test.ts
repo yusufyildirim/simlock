@@ -120,6 +120,41 @@ function runtime(version: string, build: string, isAvailable: boolean, supports:
   };
 }
 
+// why: a simctl tvOS runtime: `platform` names its family, as Xcode 26 and later print it.
+function tvRuntime(version: string, build: string, supports: string[]) {
+  return {
+    ...runtime(version, build, true, supports),
+    identifier: `com.apple.CoreSimulator.SimRuntime.tvOS-${version.replace(".", "-")}`,
+    name: `tvOS ${version}`,
+    platform: "tvOS",
+  };
+}
+
+// why: iOS 27.0 and tvOS 27.0 share a version, and tvOS 27.1 is newer than any iOS runtime; a
+// watchOS runtime of the same version stands for a family the driver does not serve.
+const tvFixture = JSON.stringify({
+  devicetypes: [
+    deviceType("iPhone-16", "iPhone 16", 0xffffff, "iPhone"),
+    deviceType(
+      "Apple-TV-4K-3rd-generation-4K",
+      "Apple TV 4K (3rd generation)",
+      0xffffff,
+      "Apple TV",
+    ),
+  ],
+  runtimes: [
+    { ...runtime("27.0", "24A434", true, ["iPhone-16"]), platform: "iOS" },
+    tvRuntime("27.0", "24J360", ["Apple-TV-4K-3rd-generation-4K"]),
+    tvRuntime("27.1", "24K100", ["Apple-TV-4K-3rd-generation-4K"]),
+    {
+      ...runtime("27.0", "24R300", true, []),
+      identifier: "com.apple.CoreSimulator.SimRuntime.watchOS-27-0",
+      name: "watchOS 27.0",
+      platform: "watchOS",
+    },
+  ],
+});
+
 // why: Same catalog as `listFixture`, plus an iOS 18.6 runtime that has just finished downloading --
 // stands in for the re-scanned catalog `resolveSpec` reads after a successful `xcodebuild` call.
 const listFixtureAfterDownload = JSON.stringify({
@@ -532,6 +567,53 @@ describe("IosSimctlDriver", () => {
       });
       const xcodebuildCall = runner.calls.find((call) => call.command === "xcodebuild");
       expect(xcodebuildCall?.options).toEqual({ lineEnd: "carriage-return-too" });
+    });
+
+    it("installs a tvOS component with -downloadPlatform tvOS, finds it apart from the iOS runtime of the same version, and reports it under its tvOS- name", async () => {
+      const tvInstalled = JSON.stringify({
+        ...(JSON.parse(tvFixture) as object),
+        runtimes: [
+          { ...runtime("27.0", "24A434", true, ["iPhone-16"]), platform: "iOS" },
+          tvRuntime("27.0", "24J360", ["Apple-TV-4K-3rd-generation-4K"]),
+        ],
+      });
+      const iosOnly = JSON.stringify({
+        ...(JSON.parse(tvFixture) as object),
+        runtimes: [{ ...runtime("27.0", "24A434", true, ["iPhone-16"]), platform: "iOS" }],
+      });
+      const iosImage = {
+        build: "24A434",
+        id: "IMG-IOS-270",
+        runtime: "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+      };
+      const tvImage = {
+        build: "24J360",
+        id: "IMG-TV-270",
+        runtime: "com.apple.CoreSimulator.SimRuntime.tvOS-27-0",
+      };
+      const runner = new ScriptedProcessRunner([
+        listed(iosOnly),
+        imagesListed([iosImage]),
+        listed(iosOnly),
+        imagesListed([iosImage]),
+        listed(iosOnly),
+        imagesListed([iosImage]),
+        xcodebuild(["-downloadPlatform", "tvOS", "-buildVersion", "27.0"]),
+        listed(tvInstalled),
+        imagesListed([iosImage, tvImage]),
+      ]);
+      const driver = await createDriver(runner);
+
+      await expect(driver.findComponent("tvOS-27.0")).resolves.toBeUndefined();
+      await expect(driver.findComponent("27.0")).resolves.toMatchObject({
+        receipt: { build: "24A434" },
+        version: "27.0",
+      });
+      await expect(install(driver, "tvOS-27.0")).resolves.toMatchObject({
+        outcome: "installed",
+        receipt: { build: "24J360" },
+        version: "tvOS-27.0",
+      });
     });
 
     it("reports already-installed when the runtime the installer leaves was there before it ran", async () => {
@@ -2146,6 +2228,82 @@ describe("IosSimctlDriver", () => {
       });
     });
 
+    it("pairs an Apple TV only with tvOS runtimes and an iPhone only with iOS ones, keeps the iOS default when a tvOS runtime is newer, and lists no watchOS runtime", async () => {
+      const driver = await createDriver(
+        new ScriptedProcessRunner([
+          { match: listInvocation, result: { code: 0, stderr: "", stdout: tvFixture } },
+        ]),
+      );
+
+      const catalog = await driver.listCatalog();
+
+      expect(catalog.modelRuntimes).toEqual({
+        "Apple TV 4K (3rd generation)": ["27.0", "27.1"],
+        "iPhone 16": ["27.0"],
+      });
+      expect(catalog.modelClasses["Apple TV 4K (3rd generation)"]).toBe("tv");
+      expect(catalog.runtimes).toEqual(["27.0", "27.0", "27.1"]);
+      expect(catalog.defaultRuntime).toBe("27.0");
+    });
+
+    it("resolves an Apple TV to its newest tvOS runtime, and names a missing tvOS runtime as a tvOS- component and an iOS version only tvOS has as a missing iOS one", async () => {
+      const tvOnly = JSON.stringify({
+        ...(JSON.parse(tvFixture) as object),
+        runtimes: [{ ...runtime("27.0", "24A434", true, ["iPhone-16"]), platform: "iOS" }],
+      });
+      const runner = new ScriptedProcessRunner([
+        { match: listInvocation, result: { code: 0, stderr: "", stdout: tvFixture } },
+        { match: listInvocation, result: { code: 0, stderr: "", stdout: tvFixture } },
+        { match: listInvocation, result: { code: 0, stderr: "", stdout: tvFixture } },
+        { match: listInvocation, result: { code: 0, stderr: "", stdout: tvOnly } },
+        { match: listInvocation, result: { code: 0, stderr: "", stdout: tvOnly } },
+      ]);
+      const driver = await createDriver(runner);
+      const tv = "Apple TV 4K (3rd generation)";
+
+      await expect(driver.resolveSpec({ model: tv, platform: "ios" })).resolves.toEqual({
+        model: tv,
+        osVersion: "27.1",
+        physical: false,
+        platform: "ios",
+      });
+      await expect(
+        driver.resolveSpec({ model: tv, osVersion: "27.0", platform: "ios" }),
+      ).resolves.toMatchObject({ model: tv, osVersion: "27.0" });
+      await expect(
+        driver.resolveSpec({ model: "iPhone 16", osVersion: "27.1", platform: "ios" }),
+      ).rejects.toMatchObject({
+        component: "27.1",
+        downloadable: true,
+        message: expect.stringContaining("iOS 27.1 is not installed"),
+      });
+      await expect(driver.resolveSpec({ model: tv, platform: "ios" })).rejects.toMatchObject({
+        component: "tvOS-latest",
+        downloadable: true,
+        message: expect.stringContaining(`No installed tvOS runtime pairs with ${tv}`),
+      });
+      await expect(
+        driver.resolveSpec({ model: tv, osVersion: "27.0", platform: "ios" }),
+      ).rejects.toMatchObject({
+        component: "tvOS-27.0",
+        downloadable: true,
+        message: expect.stringContaining("tvOS 27.0 is not installed"),
+      });
+    });
+
+    it("names an Apple TV's component with its tvOS- prefix and any other model's with its bare version", async () => {
+      const driver = await createDriver(new ScriptedProcessRunner([]));
+
+      expect(
+        [
+          { model: "Apple TV 4K (3rd generation)", osVersion: "27.0" },
+          { model: "apple tv", osVersion: "26.2" },
+          { model: "iPhone 16", osVersion: "27.0" },
+          { model: "iPad Pro 11-inch (M5)", osVersion: "26.2" },
+        ].map((spec) => driver.componentOf(spec)),
+      ).toEqual(["tvOS-27.0", "tvOS-26.2", "27.0", "26.2"]);
+    });
+
     it("resolveSpec accepts every listed pair and refuses every unlisted pair of a listed model and an installed runtime", async () => {
       const models = ["iPhone 16", "iPhone XS", "iPad Pro", "iPad mini", "iPhone 8"];
       const installed = ["18.4", "26.0"];
@@ -3637,7 +3795,7 @@ describe("IosSimctlDriver", () => {
           {
             code: "runtime-cache-unreclaimable",
             message: expect.stringContaining(
-              "iOS 18.3 (22D8075), 18.6 (22G86) are no longer installed, but their downloads " +
+              "iOS 18.3 (22D8075), iOS 18.6 (22G86) are no longer installed, but their downloads " +
                 "(17.0 GiB in all) are still in",
             ),
           },
@@ -3785,11 +3943,16 @@ describe("IosSimctlDriver listComponents()", () => {
     return { match: defaultSetInvocation, result: { code: 0, stderr: "", stdout } };
   }
 
-  it("lists one entry per iOS runtime image with its version, size and build, and no entry for another platform's runtime", async () => {
+  it("lists one entry per iOS or tvOS runtime image with its version, size and build, a tvOS one under its tvOS- name, and no entry for another platform's runtime", async () => {
     const runner = new ScriptedProcessRunner([
       imagesListed([
         image("18.4", "22E238", { sizeBytes: 8_963_458_461 }),
         image("26.0", "23A343", { sizeBytes: 9_100_000_000 }),
+        image("26.0", "23J352", {
+          platform: "com.apple.platform.appletvsimulator",
+          runtime: "com.apple.CoreSimulator.SimRuntime.tvOS-26-0",
+          sizeBytes: 4_000_000_000,
+        }),
         image("11.4", "22T250", {
           platform: "com.apple.platform.watchsimulator",
           runtime: "com.apple.CoreSimulator.SimRuntime.watchOS-11-4",
@@ -3813,6 +3976,13 @@ describe("IosSimctlDriver listComponents()", () => {
         sizeBytes: 9_100_000_000,
         variant: "23A343",
         version: "26.0",
+      },
+      {
+        foreignDevices: 0,
+        receipt: { build: "23J352", image: "IMG-26.0-23J352" },
+        sizeBytes: 4_000_000_000,
+        variant: "23J352",
+        version: "tvOS-26.0",
       },
     ]);
   });

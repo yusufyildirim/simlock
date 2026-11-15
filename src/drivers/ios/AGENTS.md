@@ -1,6 +1,6 @@
 # iOS driver
 
-Does: simulators in an owned `simctl` device set, slimmed on request, and USB iPhones and iPads through `devicectl`.
+Does: iOS and Apple TV simulators in an owned `simctl` device set, slimmed on request, and USB iPhones and iPads through `devicectl`.
 Flows: [device selection](../../../docs/internal/flows/device-selection.md), [drivers](../AGENTS.md), [input](input/AGENTS.md).
 
 ## Rules
@@ -11,6 +11,13 @@ The device set:
 - Under `default` (ADR 0048) the set is Xcode's own: never `--set`, no owned root, and never act on a device whose durable mark does not name this instance. `listManaged` lists only those, and `findLegacy` answers `undefined`.
 - `ios.simulator.headless: false` needs `default`: the `simlock` set has no DeviceHub, so iOS is refused (`invalid-device-set`). Simulators left in the set being given up refuse iOS too (`device-set-changed`); that check reads files only, never `simctl`.
 - The erasable mark is written before the durable one, never both at once. Under `default` a failed mark write deletes the new simulator before the error is rethrown.
+
+Families (ADR 0076):
+
+- The driver serves the iOS and tvOS simulator families. Each fact's family is read in one place, `runtime-family.ts`: a model's from its name (`Apple TV …`), a runtime's from simctl's `platform`, an image's from its `platformIdentifier`, a component's from its `tvOS-` prefix, a device's from its runtime identifier. A runtime of another family is not listed.
+- A model pairs only with runtimes of its family. `osVersion` stays bare; `defaultRuntime` is the newest iOS runtime.
+- A tvOS component is `tvOS-<version>` (`tvOS-latest`, `tvOS-27`) and installs with `xcodebuild -downloadPlatform tvOS`; an iOS component is the bare version. `componentOf` answers by the model's family.
+- tvOS is never slimmed and gets no slim advisory.
 
 Resolve and boot:
 
@@ -56,6 +63,7 @@ Tunnels (`device-tcp.ts`):
 - **A recovered slim device runs full but its record says `slim` (#174)** until its next `makeReady`.
 - **A cold slim lease takes a full cold boot.** MCP clients need `resetTimeoutOnProgress` or a longer timeout.
 - **Concurrent Simulator.app windows:** the second may not appear or warn.
+- **The volume step is not proven on an Apple TV.** Its `notifyutil` call exits 0 on tvOS 27.0; whether the guest goes silent was not checked.
 - **A screen stream can freeze after a reboot under its lease.** The capture checks the simulator is booted only at start, so after a crash reboot the viewer sees the old picture until the Screen tab is reopened.
 - **An iPhone's rotation has not run on hardware**; only a Duo's panel switch is proven. A silent iPhone shows its last picture until the lease ends.
 - **A foldable's stream follows SpringBoard's `DisplayContentMode` log** (ADR 0075): another wording leaves it on the panel picked at open, and taps with it; a tap sent between a fold and the new size lands on the panel left.

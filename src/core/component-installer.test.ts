@@ -1636,7 +1636,11 @@ describe("ComponentInstaller.remove", () => {
 
   it("refuses with ComponentInUseError while a device is being provisioned on it and has no record yet", async () => {
     const harness = await withSimlockInstall();
-    const release = harness.installer.claimProvision({ osVersion: "27.0", platform: "ios" });
+    const release = harness.installer.claimProvision({
+      model: "Phone",
+      osVersion: "27.0",
+      platform: "ios",
+    });
 
     await expect(harness.installer.remove(removeIos("27.0"))).rejects.toMatchObject({
       devices: 1,
@@ -1651,6 +1655,46 @@ describe("ComponentInstaller.remove", () => {
     await expect(harness.installer.remove(removeIos("27.0"))).resolves.toMatchObject({
       outcome: "removed",
     });
+  });
+
+  it("counts a device and a provision against the component its driver names, so a TV on 27.0 holds the TV runtime and not the phone runtime of that version", async () => {
+    // why: as the iOS driver does for tvOS (ADR 0076): two runtimes of one platform share a version.
+    class FamilyDriver extends FakeDriver {
+      override componentOf(spec: { readonly model: string; readonly osVersion: string }): string {
+        return spec.model.startsWith("TV") ? `tv-${spec.osVersion}` : spec.osVersion;
+      }
+    }
+    const harness = await createHarness({
+      drivers: (clock) => [new FamilyDriver({ availableOsVersions: [], clock, platform: "ios" })],
+    });
+    await harness.installer.install(ios("27.0"));
+    await harness.installer.install(ios("tv-27.0"));
+    await harness.registry.registerDevice({
+      driverData: { fakeDeviceId: "tv-1" },
+      driverDeviceId: "tv-1",
+      provisionDuration: 0,
+      spec: { physical: false, model: "TV", osVersion: "27.0", platform: "ios" },
+    });
+    const release = harness.installer.claimProvision({
+      model: "TV",
+      osVersion: "27.0",
+      platform: "ios",
+    });
+
+    expect(
+      (await harness.installer.list()).map(({ devices, version }) => ({ devices, version })),
+    ).toEqual([
+      { devices: 0, version: "27.0" },
+      { devices: 2, version: "tv-27.0" },
+    ]);
+    await expect(harness.installer.remove(removeIos("tv-27.0"))).rejects.toMatchObject({
+      devices: 2,
+      name: "ComponentInUseError",
+    });
+    await expect(harness.installer.remove(removeIos("27.0"))).resolves.toMatchObject({
+      outcome: "removed",
+    });
+    release();
   });
 
   it("answers a dry run with would-remove and the size, calls no driver verb that changes anything, and keeps the record", async () => {
@@ -1729,7 +1773,7 @@ describe("ComponentInstaller.remove", () => {
     expect(harness.ios.calls.filter((call) => call.operation === "listComponents")).toHaveLength(1);
     expect(removal.settled()).toBe(false);
 
-    harness.installer.claimProvision({ osVersion: "27.0", platform: "ios" });
+    harness.installer.claimProvision({ model: "Phone", osVersion: "27.0", platform: "ios" });
     releaseGate();
     await flush();
 
@@ -1788,19 +1832,19 @@ describe("ComponentInstaller.remove", () => {
     const removal = track(harness.installer.remove(removeIos("27.0")));
     await flush();
 
-    expect(() => harness.installer.claimProvision({ osVersion: "27.0", platform: "ios" })).toThrow(
-      ComponentBeingRemovedError,
-    );
+    expect(() =>
+      harness.installer.claimProvision({ model: "Phone", osVersion: "27.0", platform: "ios" }),
+    ).toThrow(ComponentBeingRemovedError);
     // Another version is not being removed.
     expect(() =>
-      harness.installer.claimProvision({ osVersion: "26.0", platform: "ios" }),
+      harness.installer.claimProvision({ model: "Phone", osVersion: "26.0", platform: "ios" }),
     ).not.toThrow();
 
     harness.ios.releaseRemovals();
     await flush();
     expect(removal.settled()).toBe(true);
     expect(() =>
-      harness.installer.claimProvision({ osVersion: "27.0", platform: "ios" }),
+      harness.installer.claimProvision({ model: "Phone", osVersion: "27.0", platform: "ios" }),
     ).not.toThrow();
   });
 
@@ -1815,7 +1859,7 @@ describe("ComponentInstaller.remove", () => {
     expect(harness.registry.snapshot.components).toMatchObject([{ version: "27.0" }]);
     expect(harness.events).toEqual([]);
     expect(() =>
-      harness.installer.claimProvision({ osVersion: "27.0", platform: "ios" }),
+      harness.installer.claimProvision({ model: "Phone", osVersion: "27.0", platform: "ios" }),
     ).not.toThrow();
     // The turn is back: an install on the platform starts.
     await expect(harness.installer.install(ios("28.0"))).resolves.toMatchObject({
@@ -1850,8 +1894,12 @@ describe("ComponentInstaller.remove", () => {
 
   it("ends one claim per release however often that release is called", async () => {
     const harness = await withSimlockInstall();
-    const first = harness.installer.claimProvision({ osVersion: "27.0", platform: "ios" });
-    harness.installer.claimProvision({ osVersion: "27.0", platform: "ios" });
+    const first = harness.installer.claimProvision({
+      model: "Phone",
+      osVersion: "27.0",
+      platform: "ios",
+    });
+    harness.installer.claimProvision({ model: "Phone", osVersion: "27.0", platform: "ios" });
 
     first();
     first();

@@ -1,6 +1,6 @@
 # 0010. Components are installed, recorded and removed through one owner in the core
 
-- **Status:** Accepted
+- **Status:** Accepted; §1 narrowed by [ADR 0076](0076-an-apple-tv-is-an-ios-simulator-of-class-tv-and-its-runtime-a-tvos-component.md)
 - **Date:** 2026-10-02
 - **Issue:** [#208](https://github.com/callstackincubator/simlock/issues/208),
   [#209](https://github.com/callstackincubator/simlock/issues/209),

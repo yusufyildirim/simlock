@@ -52,6 +52,7 @@ Components:
 
 - `ComponentInstaller` is the only caller of `installComponent` and `removeComponent`. One queue per platform, first come; a call for the same component joins. One `DiskSpaceGuard` serves both platforms.
 - A removal marks the component under the lock, so `claimProvision` throws `ComponentBeingRemovedError` until it ends.
+- A device's component is its driver's `componentOf(spec)`, never its bare `osVersion` (ADR 0076): `list`, `remove` and `claimProvision` count by it.
 
 Baselines (ADR 0061 §4):
 

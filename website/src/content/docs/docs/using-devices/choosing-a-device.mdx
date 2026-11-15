@@ -76,9 +76,23 @@ What can go wrong:
   {"error":{"code":"UNKNOWN_MODEL","message":"Unknown ios model: iPhone 19; a newer Xcode version may add this device"}}
   ```
 
+### Lease a TV
+
+`--class tv` gets an Apple TV simulator on iOS and an Android TV emulator on Android:
+
+```sh
+simlock lease --platform ios --class tv
+simlock lease --platform android --class tv
+```
+
+- **Apple TV.** The models are `Apple TV 4K (3rd generation)` first, then `Apple TV`, and `simlock catalog` lists any other Apple TV your Xcode has. An Apple TV runs tvOS, so it needs a tvOS runtime (see [Runtimes and images](/simlock/docs/worker/runtimes-and-images)). `--os` is a tvOS version for it: `--device "Apple TV" --os 26.0` gets tvOS 26.0.
+- **Android TV.** The models are `Television (1080p)` and `Television (4K)`. They need an Android TV or Google TV system image, which an admin installs with `sdkmanager`; Simlock can't download one.
+
+You lease, release, reach and watch a TV like any other device. See [Watch the screen](/simlock/docs/using-devices/watching-the-screen) for the keys it takes.
+
 ## Choose the OS version
 
-Without `--os`, you get the newest OS installed for the platform. Use `--os` to ask for one version or a range:
+Without `--os`, you get the newest OS installed for the platform that your model runs: an iPhone gets the newest iOS, an Apple TV the newest tvOS. Use `--os` to ask for one version or a range:
 
 | You write | You get |
 | --- | --- |
@@ -115,7 +129,7 @@ A **slim** simulator has background services that agents rarely need turned off,
 What to expect:
 
 - A full lease never gets a slim device.
-- Slim is best effort. iOS versions older than 18.5, and all Android devices, can't be slimmed, so you get a full device instead. Check `device.mode` in the grant.
+- Slim is best effort. iOS versions older than 18.5, Apple TVs, and all Android devices can't be slimmed, so you get a full device instead. Check `device.mode` in the grant.
 - A lease only reuses an idle device of the mode it asked for. So your request may wait for a new device even while devices of the other mode sit idle.
 
 If a test fails because a push notification, a Spotlight result, an App Store sheet or a system picker never appears, check `device.mode`. Ask for `--mode full` when your app needs those features.

@@ -5,7 +5,7 @@ description: Watch a leased simulator, emulator or physical device live in the c
 
 import { Steps, Aside } from '@astrojs/starlight/components';
 
-The console can show the live screen of any running device, leased or not: an iOS simulator, an Android emulator, a physical Android phone or a physical iPhone. In the console you can only watch; you can't tap or type.
+The console can show the live screen of any running device, leased or not: an iOS or Apple TV simulator, an Android emulator (Android TV included), a physical Android phone or a physical iPhone. In the console you can only watch; you can't tap or type.
 
 Your own tools can do more over HTTP: [stream a lease's screen](#stream-from-your-own-tool) and [send it taps and keys](#send-input-to-your-own-lease).
 
@@ -139,7 +139,7 @@ A lease's holder can send taps, swipes, keys and buttons to its device over a We
 
 Which devices take input:
 
-- An iOS simulator, an Android emulator and an enrolled Android phone take input.
+- An iOS or Apple TV simulator, an Android emulator (Android TV included) and an enrolled Android phone take input.
 - A physical iPhone doesn't. Its socket stays open but reports `inputUnavailable` (see below).
 
 ### The messages
@@ -176,6 +176,7 @@ A message is dropped, and the socket stays open, when it isn't valid JSON, has a
 - **A dark screen isn't woken**, so a tap on it does nothing.
 - Input on Android doesn't change any device setting.
 - A phone whose adb check is closed reports `inputUnavailable`.
+- **On an Android TV** the arrows move the focus, Enter selects, and `back` and `home` work as on a remote. `lock` is the Power key: it puts the TV to sleep, and a second `lock` wakes it.
 
 ### On an iOS simulator
 
@@ -185,6 +186,16 @@ A message is dropped, and the socket stays open, when it isn't valid JSON, has a
 - **Orientation (`0x07`)** turns the simulator as if you turned the phone in your hand. A screen that doesn't rotate, such as the iPhone home screen, stays as it is, and nothing tells the client.
 - `0x82` always says `"orientation":"portrait"`, even after a rotation, and touch positions stay fractions of the screen in portrait.
 - **On an iPhone Duo** a tap lands at its fraction of the panel in use, upright, folded or unfolded: the cover when folded, the inner panel when unfolded. A fold while the socket is open sends a new `0x82` with the new panel's size, so a client that reads `0x82` follows it.
+
+### On an Apple TV simulator
+
+An Apple TV has no touch screen, so it takes the keys of its remote:
+
+- **Keys** work on every tvOS version: the arrows move the focus, Return (usage 40) selects, and Escape (usage 41) goes back.
+- **`back`** is the remote's Menu button: it goes back, as Escape does.
+- **`home`** brings the TV's home screen forward. `app_switcher` and `lock` are dropped.
+- **Touches, scrolls and orientation** are dropped: a tap would reach the TV as a press that sends the app to the background.
+- There is no play/pause button.
 
 ### When the socket closes
 

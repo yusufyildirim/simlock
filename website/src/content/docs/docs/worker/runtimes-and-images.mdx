@@ -1,11 +1,11 @@
 ---
 title: Runtimes and images
-description: Install and remove iOS simulator runtimes and Android system images on a worker, decide when Simlock may download them, and see what agents can lease.
+description: Install and remove iOS and tvOS simulator runtimes and Android system images on a worker, decide when Simlock may download them, and see what agents can lease.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-Every iOS simulator needs an iOS runtime on the machine, and every Android emulator needs a system image. Simlock calls both **components**. They are several gigabytes each, so install the ones your agents use ahead of time: otherwise the first lease that needs one waits for the download, or fails.
+Every iOS simulator needs an iOS runtime on the machine, every Apple TV simulator a tvOS runtime, and every Android emulator a system image. Simlock calls both **components**. They are several gigabytes each, so install the ones your agents use ahead of time: otherwise the first lease that needs one waits for the download, or fails.
 
 Installing and removing components needs an admin session, such as your own terminal on the worker. An agent session gets `FORBIDDEN`. Anyone can list them.
 
@@ -28,7 +28,8 @@ Platform: ios
       iPad Pro 11-inch (M4): 18.4, 26.0
 ```
 
-- The default runtime is the newest one installed.
+- The default runtime is the newest iOS runtime installed.
+- An Apple TV works only with tvOS runtimes, and an iPhone or iPad only with iOS ones. iOS and tvOS share version numbers, so `Runtimes` may list a version twice: once for each.
 - Models are grouped by class. Each class shows the model a lease for that class gets.
 - A model works only with the runtimes on its own line. `(no paired runtime)` means no installed runtime works with it.
 - For Android, the output also lists each installed system image with its API level, tag and CPU type. A listed tag is what `simlock lease --image-tag` accepts. Models you made in Android Studio are marked `(custom)`.
@@ -40,10 +41,13 @@ Platform: ios
 
 ```sh
 simlock component install ios 26.0
+simlock component install ios tvOS-26.0
 simlock component install android 35
 ```
 
-Give an iOS version, or an Android API level. On Android, Simlock installs the `google_apis` image for the machine's CPU.
+Give an iOS version, a tvOS version with `tvOS-` in front (`tvOS-26.0`, or `tvOS-latest` for the newest), or an Android API level. On Android, Simlock installs the `google_apis` image for the machine's CPU.
+
+Simlock can't download an Android TV image: an Android component is an API level, and Simlock installs its phone image. Install a TV image with the Android SDK's own tool, for example `sdkmanager "system-images;android-34;android-tv;arm64-v8a"`. Once it is installed, `Television (1080p)` and `Television (4K)` can be leased at that level. A level with only a TV image counts as installed, so neither a phone lease nor `simlock component install` downloads the phone image of that level: install it with `sdkmanager` too.
 
 Progress prints on stderr and the result on stdout:
 
@@ -61,7 +65,7 @@ Before you start:
 - **Free disk.** You need about 8 GiB free for an iOS runtime and 2 GiB for an Android image. With less, the install fails with `INSUFFICIENT_DISK_SPACE` and downloads nothing.
 - **Time.** An install gets `downloads.timeoutMs` (20 minutes by default), including time spent waiting its turn. Running out fails with `DOWNLOAD_TIMEOUT`.
 - **One download per platform at a time.** A second install prints `{"stage":"waiting"}` and waits. A lease or install that needs a component already downloading waits for that download.
-- **iOS 16.0 is the oldest runtime Simlock can install.** Install older ones from Xcode.
+- **iOS 16.0 and tvOS 16.0 are the oldest runtimes Simlock can install.** Install older ones from Xcode.
 - **Stopping the daemon cancels an install.** Run the command again afterwards.
 
 To install on workers behind a gateway, see [Manage workers](/simlock/docs/gateway/managing-workers).
@@ -134,7 +138,7 @@ This lists every runtime and image on the machine, whoever installed it.
 
 | Field | Meaning |
 | --- | --- |
-| `version` | The version, as `simlock catalog` shows it. |
+| `version` | The version, as `simlock catalog` shows it. A tvOS runtime's has `tvOS-` in front, as in `tvOS-26.0`: give it that way to `simlock component remove`. |
 | `variant` | Tells two components of the same version apart: an iOS runtime's build, or an Android image's tag and CPU type. |
 | `sizeBytes` | The disk space it takes. Missing when it cannot be read. |
 | `installedBySimlock` | `true` if Simlock installed it and it has not changed. Only these can be removed with Simlock. |

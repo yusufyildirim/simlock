@@ -122,7 +122,7 @@ function callOf(url: URL, init: Parameters<Fetch>[1]): Call {
 
 // why: a lease's input socket as the test plays the daemon: `sent` holds what the console wrote, each
 // a tag and its JSON, and `admit`, `config` and `close` say what the daemon answers.
-export interface FakeInputSocket {
+interface FakeInputSocket {
   readonly url: string;
   readonly protocols: readonly string[];
   readonly sent: { readonly tag: number; readonly body: unknown }[];

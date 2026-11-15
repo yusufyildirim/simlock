@@ -752,14 +752,7 @@ export class IosSimctlDriver implements Driver {
             {
               foreignDevices: foreign.get(image.runtimeIdentifier)?.used ?? 0,
               image: { ...image, family, version: image.version },
-              unusedDevices: images.some(
-                (other) =>
-                  other !== image &&
-                  familyOfImagePlatform(other.platformIdentifier) !== undefined &&
-                  other.runtimeIdentifier === image.runtimeIdentifier,
-              )
-                ? 0
-                : (foreign.get(image.runtimeIdentifier)?.unused ?? 0),
+              unusedDevices: unusedDevicesOf(image, images, foreign),
               receipt: imageReceipt(image),
               version: componentName(family, image.version),
               ...(image.build === undefined ? {} : { variant: image.build }),
@@ -2405,6 +2398,22 @@ function leftoverDownloadsSentence(
     "not delete files there -- remove the platform in Xcode's Settings -> Platforms to get " +
     "the space back"
   );
+}
+
+// why: another image of the same runtime keeps its simulators available after this one goes, so
+// only the runtime's last image has unused devices to report.
+function unusedDevicesOf(
+  image: RuntimeImage,
+  images: readonly RuntimeImage[],
+  foreign: ReadonlyMap<string, DefaultSetDevices>,
+): number {
+  const shared = images.some(
+    (other) =>
+      other !== image &&
+      familyOfImagePlatform(other.platformIdentifier) !== undefined &&
+      other.runtimeIdentifier === image.runtimeIdentifier,
+  );
+  return shared ? 0 : (foreign.get(image.runtimeIdentifier)?.unused ?? 0);
 }
 
 function unavailableDevicesResidue(unused: number): string | undefined {

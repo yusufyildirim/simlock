@@ -55,7 +55,6 @@ export {
 } from "./service-manager.js";
 export {
   BEARER_PROTOCOL_PREFIX,
-  LEASE_SOCKET_PROTOCOL,
   type LeaseSocket,
   type LeaseSocketAccept,
   MemoryLeaseSocket,

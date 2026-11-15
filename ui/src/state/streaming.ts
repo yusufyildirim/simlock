@@ -5,6 +5,7 @@ import { type EventRow, eventRows } from "../model/event-list";
 import { timeOfDay } from "../model/events";
 import { readDrawerTab } from "../model/worker-page";
 import { streamPath } from "../model/paths";
+import { type RemoteSpec, remoteOf } from "../model/remote";
 import { type StreamOffer, streamOffer, streamsDevice } from "../model/screen";
 import { eventsOfDevice, eventTitle } from "../model/streaming";
 import type { WorkerList } from "../model/workers";
@@ -20,11 +21,17 @@ export type { DeviceRow, EventRow, LeaseInspection };
 export { agentKind } from "../model/holder";
 // why: the streaming page copies a lease id by the same rule, and with the same words, as Leases.
 export { useCopyLeaseId } from "./leases";
+export { type Remote, useRemote } from "./remote";
 
 export interface StreamingPageView {
   readonly worker: { readonly name: string; readonly to: string };
   readonly device: DeviceRow;
   readonly offer: StreamOffer;
+  // why: the remote a leased device gets, from its worker's input capability and its model's class;
+  // none for a device with no lease, since input is a lease's.
+  readonly remote: RemoteSpec | undefined;
+  // why: the daemon's platform name ("ios", "android"), which names the remote's Back button.
+  readonly platform: string;
   // why: the header says "streaming" only for a device whose picture is being asked for.
   readonly streaming: boolean;
   readonly details: () => void;
@@ -47,11 +54,15 @@ export function useStreamingPage(
     const device = shown?.overview.devices?.find((row) => row.id === deviceId);
     if (shown === undefined || device === undefined) return undefined;
     const to = workerPath(workerId);
-    const offer = streamOffer(workers?.find((worker) => worker.id === workerId));
+    const view = workers?.find((worker) => worker.id === workerId);
+    const offer = streamOffer(view);
+    const raw = view?.devices?.find((each) => each.id === deviceId);
     return {
       details: () => navigate(device.to),
       device,
       offer,
+      platform: raw?.spec.platform ?? "",
+      remote: raw === undefined || device.lease === undefined ? undefined : remoteOf(view, raw),
       since,
       streaming: streamsDevice(device.status.word, offer),
       // why: Stop watching leaves the page, and leaving ends the capture, so there is nothing else to stop.

@@ -64,6 +64,43 @@ function upgradeWithVersion(port: number, version: string): Promise<number> {
   });
 }
 
+function upgradeOffering(port: number, protocols: string): Promise<string | undefined> {
+  return new Promise((resolve, reject) => {
+    const upgrading = request({
+      headers: {
+        connection: "Upgrade",
+        "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+        "sec-websocket-protocol": protocols,
+        "sec-websocket-version": "13",
+        upgrade: "websocket",
+      },
+      host: "127.0.0.1",
+      path: "/v1/leases/L-1/input",
+      port,
+    });
+    upgrading.on("upgrade", (response, socket) => {
+      socket.destroy();
+      const chosen = response.headers["sec-websocket-protocol"];
+      resolve(Array.isArray(chosen) ? chosen.join(", ") : chosen);
+    });
+    upgrading.on("response", (response) => reject(new Error(String(response.statusCode))));
+    upgrading.end();
+  });
+}
+
+describe("the upgrade router's subprotocol answer", () => {
+  it.each([
+    { offered: "simlock, simlock.bearer.slk_secret", chosen: "simlock" },
+    { offered: "simlock.bearer.slk_secret, simlock", chosen: "simlock" },
+    { offered: "simlock.bearer.slk_secret", chosen: undefined },
+    { offered: "simlock.bearer.slk_secret, other", chosen: "other" },
+  ])("answers $chosen to an offer of $offered, never the token", async ({ chosen, offered }) => {
+    const port = await listen(vi.fn<LeaseSocketAccept>());
+
+    await expect(upgradeOffering(port, offered)).resolves.toBe(chosen);
+  });
+});
+
 // why: `upgrade-router.ts` is not exported through `ports/index.ts` (the CLI must not load `ws`), and the claim is an ordering the surface cannot force: what `ws` does on a refused handshake -- it answers and destroys the socket without calling the accept back.
 describe("the upgrade router's lease socket", () => {
   it("abandons what the module opened when the handshake is refused, and not when it succeeds", async () => {

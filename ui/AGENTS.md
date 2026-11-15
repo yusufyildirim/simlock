@@ -20,6 +20,7 @@ Session:
 - `src/data/session.ts` holds who is signed in. A token is kept in `sessionStorage`; a person a sign-in proxy signed in is kept in memory only.
 - The API client reports a 401, or an answer that is not Simlock's, to the session. In a proxy session that starts the one shared check in `src/data/identity-check.ts`; in a token session a 401 forgets the token and asks for it.
 - The live connection asks `session.lost()` when it loses the stream. In a proxy session that is the same check, and its answer is to reconnect at once, back off as for an unreachable daemon, or stop while the session ends.
+- A lease's input socket (`src/data/input.ts`, `src/state/remote.ts`) carries the token as the subprotocol `simlock.bearer.<token>` beside `simlock`, never in the URL (ADR 0077); a proxy session offers `simlock` alone. The socket lives as long as the streaming page's Remote card and never reconnects by itself.
 - `src/data/mode.ts` reads the daemon's mode and versions once the live connection starts and again after each reconnect. It repeats the read on a timer (`RE_READ_MS`) because the daily update check emits no event. A failed repeat keeps the last values, and the timer stops with the live connection.
 - The worker actions are offered only when `useDaemonMode` says `gateway`; while the mode is unknown the console never guesses it.
 

@@ -1,5 +1,7 @@
 import "./streaming-page.css";
 
+import type { KeyboardEvent } from "react";
+
 import {
   AgentChip,
   Button,
@@ -10,6 +12,7 @@ import {
   Page,
   Panel,
   Pill,
+  RemotePad,
   Ring,
   RowMenu,
 } from "../../ds";
@@ -17,10 +20,12 @@ import {
   agentKind,
   type DeviceRow,
   type LeaseInspection,
+  type Remote,
   useCopyLeaseId,
   useDeviceEvents,
   useHolder,
   useLegacyWatchRedirect,
+  useRemote,
   useStreamingPage,
   type StreamingPageView,
 } from "../../state/streaming";
@@ -60,6 +65,10 @@ function StreamingBody(props: { readonly page: StreamingPageView; readonly worke
   const { page, workerId } = props;
   const { device, offer, worker } = page;
   const lease = device.lease;
+  const remote = useRemote(lease?.id, page.platform, page.remote);
+  // why: while a TV's remote takes keys, the screen is a focusable group whose keys drive it; a
+  // click on the picture focuses it.
+  const keys = remote?.keyboard === true;
   return (
     <div className="page stream-page">
       <header className="page-head">
@@ -97,7 +106,19 @@ function StreamingBody(props: { readonly page: StreamingPageView; readonly worke
         </div>
       </header>
       <div className="stream-grid">
-        <div className="stream-stage">
+        <div
+          className="stream-stage"
+          {...(keys
+            ? {
+                "aria-label": "Screen. Keys drive the remote.",
+                onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+                  if (remote.key(event.key)) event.preventDefault();
+                },
+                role: "group",
+                tabIndex: 0,
+              }
+            : {})}
+        >
           <ScreenPanel
             workerId={workerId}
             deviceId={device.id}
@@ -107,11 +128,47 @@ function StreamingBody(props: { readonly page: StreamingPageView; readonly worke
         </div>
         <div className="stream-side">
           {lease === undefined ? null : <HolderCard leaseId={lease.id} to={lease.to} />}
+          {remote === undefined ? null : <RemoteCard remote={remote} />}
           <DeviceCard device={device} worker={worker.name} />
           <EventsCard workerId={workerId} deviceId={device.id} leaseId={lease?.id} />
         </div>
       </div>
     </div>
+  );
+}
+
+function RemoteCard({ remote }: { readonly remote: Remote }) {
+  const entry = (control: Remote["buttons"][number]) => ({
+    disabled: control.disabled,
+    label: control.label,
+    onPress: () => remote.press(control.control),
+  });
+  const find = (name: string) => remote.buttons.find((each) => each.control === name);
+  const [up, down, left, right, select] = ["up", "down", "left", "right", "select"].map(find);
+  const pad =
+    up && down && left && right && select
+      ? {
+          center: entry(select),
+          down: entry(down),
+          left: entry(left),
+          right: entry(right),
+          up: entry(up),
+        }
+      : undefined;
+  const padded = new Set(["up", "down", "left", "right", "select"]);
+  return (
+    <Panel title="Remote" className="stream-panel stream-remote">
+      <RemotePad
+        {...(pad === undefined ? {} : { pad })}
+        keys={remote.buttons.filter((each) => !padded.has(each.control)).map(entry)}
+      />
+      <p className="muted stream-remote-note">{remote.note}</p>
+      {remote.retry ? (
+        <Button small onClick={remote.connect}>
+          Connect again
+        </Button>
+      ) : null}
+    </Panel>
   );
 }
 

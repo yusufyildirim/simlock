@@ -8,6 +8,7 @@ Strategies (ADR 0033):
 
 - `authenticateRequest` asks the enabled strategies in registry order (`strategies/index.ts`): `token`, then `proxy`, so a good `slk_` token wins. The first answer other than `not-mine` ends the list, and the refusal's message and details come from the strategy.
 - `not-mine` means the strategy's credential is absent. It is not a refusal: the next strategy is asked.
+- The token strategy reads `Authorization: Bearer`, and on a WebSocket upgrade only, when that is empty, a `simlock.bearer.<token>` item of `Sec-WebSocket-Protocol`: a browser cannot set the header (ADR 0077). The upgrade router never answers that item.
 - `strategies/conformance.test.ts` runs every registered strategy: `not-mine` without its credential, `via` equal to its name.
 
 The proxy strategy:

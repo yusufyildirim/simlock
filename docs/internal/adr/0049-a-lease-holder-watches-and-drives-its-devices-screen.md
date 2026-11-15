@@ -1,6 +1,6 @@
 # 0049. A lease holder watches and drives its device's screen
 
-- **Status:** Accepted; §3's rotation narrowed by [ADR 0052](0052-an-ios-simulator-takes-serve-sims-rotation.md): an iOS simulator takes `0x07`
+- **Status:** Accepted; §3's rotation narrowed by [ADR 0052](0052-an-ios-simulator-takes-serve-sims-rotation.md): an iOS simulator takes `0x07`; §1's authentication narrowed by [ADR 0077](0077-a-browser-sends-its-token-on-a-lease-socket-as-a-subprotocol.md): a browser may send its token as a subprotocol
 - **Date:** 2026-10-26
 - **Issue:** [#1013](https://github.com/callstackincubator/simlock/issues/1013)
 - **Narrows:** [ADR 0045](0045-a-devices-screen-streams-to-operators-not-a-leases.md)

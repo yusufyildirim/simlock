@@ -1,3 +1,4 @@
+import { BEARER_PROTOCOL_PREFIX } from "../../../ports/index.js";
 import type { AuthStrategyDefinition } from "../../strategy.js";
 
 const BEARER_PREFIX = "Bearer ";
@@ -10,12 +11,23 @@ function bearerValue(header: string | null): string {
   return header.slice(BEARER_PREFIX.length).trim();
 }
 
+// why: a browser cannot set `Authorization` on a WebSocket, so on an upgrade, and only there, the
+// token may come as the subprotocol `simlock.bearer.<token>` (ADR 0077). `Authorization` still wins.
+function upgradeProtocolValue(headers: Headers): string {
+  if (headers.get("upgrade")?.toLowerCase() !== "websocket") return "";
+  const offered = (headers.get("sec-websocket-protocol") ?? "")
+    .split(",")
+    .map((item) => item.trim());
+  const item = offered.find((protocol) => protocol.startsWith(BEARER_PROTOCOL_PREFIX));
+  return item === undefined ? "" : item.slice(BEARER_PROTOCOL_PREFIX.length);
+}
+
 export const tokenStrategy: AuthStrategyDefinition = {
   name: "token",
   enabled: () => true,
   create: (deps) => ({
     authenticate: async ({ headers }) => {
-      const secret = bearerValue(headers.get("authorization"));
+      const secret = bearerValue(headers.get("authorization")) || upgradeProtocolValue(headers);
       if (!secret.startsWith(TOKEN_PREFIX)) {
         return { kind: "not-mine", sawCredential: secret !== "" };
       }

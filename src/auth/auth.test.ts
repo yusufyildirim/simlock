@@ -129,6 +129,69 @@ describe("authenticateRequest with the token strategy", () => {
   });
 });
 
+describe("authenticateRequest with a token in a WebSocket upgrade's subprotocols", () => {
+  const upgrade = (protocols: string, extra: Record<string, string> = {}) =>
+    new Headers({ "sec-websocket-protocol": protocols, upgrade: "websocket", ...extra });
+
+  it("identifies the token a browser offers as simlock.bearer.<token> beside simlock", async () => {
+    const auth = createAuth(await options());
+
+    await expect(
+      auth.authenticateRequest(upgrade("simlock, simlock.bearer.slk_operator")),
+    ).resolves.toEqual({
+      principal: "tok_operator",
+      name: "ops",
+      role: "operator",
+      via: "token",
+      ambient: false,
+    });
+  });
+
+  it.each([
+    {
+      name: "an unknown token",
+      headers: upgrade("simlock, simlock.bearer.slk_unknown"),
+      message: "Unknown bearer token",
+      status: 401,
+    },
+    {
+      name: "a plain request, which is no upgrade",
+      headers: new Headers({ "sec-websocket-protocol": "simlock, simlock.bearer.slk_agent" }),
+      message: "Missing bearer token",
+      status: 401,
+    },
+    {
+      name: "an upgrade offering only simlock",
+      headers: upgrade("simlock"),
+      message: "Missing bearer token",
+      status: 401,
+    },
+    {
+      name: "a worker join token",
+      headers: upgrade("simlock, simlock.bearer.slk_worker"),
+      message: "A worker join token can only open an uplink, not call the HTTP API",
+      status: 403,
+    },
+  ])("refuses $name with $status", async (row) => {
+    const auth = createAuth(await options());
+
+    await expect(auth.authenticateRequest(row.headers)).rejects.toMatchObject({
+      message: row.message,
+      status: row.status,
+    });
+  });
+
+  it("reads Authorization first when an upgrade carries both", async () => {
+    const auth = createAuth(await options());
+
+    await expect(
+      auth.authenticateRequest(
+        upgrade("simlock, simlock.bearer.slk_agent", { authorization: "Bearer slk_operator" }),
+      ),
+    ).resolves.toMatchObject({ principal: "tok_operator" });
+  });
+});
+
 describe("authenticateRequest over several strategies", () => {
   const identity = {
     principal: "p",

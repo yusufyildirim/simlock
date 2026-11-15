@@ -137,6 +137,10 @@ A lease's holder can send taps, swipes, keys and buttons to its device over a We
 
 **Connect** to `GET /v1/leases/<lease-id>/input` with an `Upgrade: websocket` request and your token in an `Authorization: Bearer` header, on the worker or the gateway.
 
+A browser can't set `Authorization` on a WebSocket, so a page offers its token as a subprotocol instead: `new WebSocket(url, ["simlock", "simlock.bearer." + token])`. The server answers with the subprotocol `simlock` and never sends the token back. It reads the token this way only on a WebSocket upgrade, and `Authorization` wins when a request has both. Behind a sign-in proxy, offer `simlock` alone: the proxy signs the upgrade as it signs every request. Never put the token in the URL.
+
+The [console](/simlock/docs/worker/console#drive-a-leased-device) uses this to drive a leased device from its streaming page.
+
 Which devices take input:
 
 - An iOS or Apple TV simulator, an Android emulator (Android TV included) and an enrolled Android phone take input.

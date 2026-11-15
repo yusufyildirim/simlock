@@ -53,7 +53,13 @@ export {
   type ServiceManagerName,
   type ServiceState,
 } from "./service-manager.js";
-export { type LeaseSocket, type LeaseSocketAccept, MemoryLeaseSocket } from "./lease-socket.js";
+export {
+  BEARER_PROTOCOL_PREFIX,
+  LEASE_SOCKET_PROTOCOL,
+  type LeaseSocket,
+  type LeaseSocketAccept,
+  MemoryLeaseSocket,
+} from "./lease-socket.js";
 export { type Clock, FakeClock, SystemClock, type TimerHandle } from "./clock.js";
 /**
  * why: ADR 0005 §33's uplink port and its in-memory adapter. The WebSocket adapters are

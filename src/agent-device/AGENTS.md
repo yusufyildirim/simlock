@@ -77,4 +77,5 @@ Local profile ([ADR 0046](../../docs/internal/adr/0046-a-standalone-worker-serve
 ## Known gaps
 
 - **A call on a phone lease drops the client's instance pins too** (`front/host-link.ts`): they name the simulator daemon.
+- **A rebuilt entry's target is `mobile`** (`adoptable`, `front/host-link.ts`): the worker's registry view carries no class, so after a standalone worker restart a TV or desktop lease no longer matches `devices --target tv`. Through a gateway the class comes from the catalog.
 - **Calls that name no lease share the token's tenant**: `session list` and an upload with no lease header see what every run of the token left.

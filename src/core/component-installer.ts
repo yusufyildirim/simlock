@@ -465,11 +465,12 @@ export class ComponentInstaller {
    * Simlock device in `list` and in a removal's checks, so a removal cannot start under a
    * device the registry does not hold yet (ADR 0010 §8).
    */
-  claimProvision(spec: Pick<DeviceSpec, "osVersion" | "platform">): () => void {
-    const key = componentKey(spec.platform, spec.osVersion);
+  claimProvision(spec: Pick<DeviceSpec, "model" | "osVersion" | "platform">): () => void {
+    const component = this.#componentOf(spec);
+    const key = componentKey(spec.platform, component);
     const removal = this.#removals.get(spec.platform);
-    if (removal?.marked === true && removal.version === spec.osVersion) {
-      throw new ComponentBeingRemovedError(spec.platform, spec.osVersion);
+    if (removal?.marked === true && removal.version === component) {
+      throw new ComponentBeingRemovedError(spec.platform, component);
     }
     this.#provisioning.set(key, (this.#provisioning.get(key) ?? 0) + 1);
     let released = false;
@@ -524,9 +525,15 @@ export class ComponentInstaller {
       (device) =>
         device.state !== "deleted" &&
         device.spec.platform === platform &&
-        device.spec.osVersion === version,
+        this.#componentOf(device.spec) === version,
     ).length;
     return registered + (this.#provisioning.get(componentKey(platform, version)) ?? 0);
+  }
+
+  // why: ADR 0076: a device's component is its driver's answer, since two runtimes of one platform
+  // can share a version (iOS 27.0 and tvOS 27.0).
+  #componentOf(spec: Pick<DeviceSpec, "model" | "osVersion" | "platform">): string {
+    return this.options.drivers.get(spec.platform).componentOf(spec);
   }
 
   /**

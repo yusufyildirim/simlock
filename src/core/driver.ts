@@ -263,6 +263,12 @@ export interface Driver {
    */
   revalidateRoot(): Promise<void>;
   resolveSpec(request: ExactDeviceRequest): Promise<VirtualSpec>;
+  /**
+   * why: ADR 0076: two runtimes of one platform can share a version (iOS 27.0 and tvOS 27.0), so the
+   * component a device runs on is the driver's answer, named as `listComponents` names it; core
+   * counts a component's devices by it.
+   */
+  componentOf(spec: Pick<VirtualSpec, "model" | "osVersion">): string;
   findComponent(component: string): Promise<InstalledComponent | undefined>;
   installComponent(
     component: string,

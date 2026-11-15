@@ -82,6 +82,15 @@ import { fillSimctlDevice } from "./simctl-device.js";
 import { IosPhysicalHandler } from "./physical.js";
 import { createIosDeviceInput } from "./input/index.js";
 import { iosRuntimeVersionFromId } from "./runtime-version.js";
+import {
+  assetRootOf,
+  componentName,
+  familyOfImagePlatform,
+  familyOfModel,
+  parseComponent,
+  RUNTIME_FAMILIES,
+  type RuntimeFamily,
+} from "./runtime-family.js";
 import { IosSourceTable, type ReadySeed, type SourceRow } from "./source-data.js";
 import { createIosScreenCapture } from "./screen-capture.js";
 import { defaultIosDeviceRoot, type IosDriverConfig } from "./definition.js";
@@ -123,12 +132,6 @@ const IOS_DOWNLOAD_FLOOR: readonly [number, number, number] = [16, 0, 0];
 // with headroom) -- reserved by `ComponentInstaller` before `xcodebuild -downloadPlatform` ever
 // starts, so a full disk fails fast instead of filling up mid-download.
 const IOS_RUNTIME_MIN_FREE_BYTES = 8 * 1024 ** 3;
-// why: Where macOS's own asset daemon keeps every simulator runtime it has ever downloaded, one
-// `<uuid>.asset` bundle per build. `simctl runtime delete` only unregisters a runtime from
-// CoreSimulator; the bundle it was mounted from stays here, marked never-collected, spending
-// the same free space `IOS_RUNTIME_MIN_FREE_BYTES` measures. Nothing Simlock may do can
-// reclaim it (issue #79), so the driver only ever reads this path.
-const IOS_RUNTIME_ASSET_ROOT = "/System/Library/AssetsV2/com_apple_MobileAsset_iOSSimulatorRuntime";
 // why: A cold `simctl boot` to `bootstatus` measures roughly 30s on a fast, idle machine and up to
 // a minute on a loaded or slower one. The upper end is the estimate, deliberately: this number
 // is what a waiting requester is quoted, and quoting 30s to someone who then waits 60s is the
@@ -290,6 +293,7 @@ const PRODUCT_FAMILY_CLASSES: ReadonlyMap<string | undefined, DeviceClass> = new
 ]);
 
 interface RuntimeAsset {
+  readonly family: RuntimeFamily;
   readonly path: string;
   readonly version: string;
   readonly build: string;
@@ -484,8 +488,9 @@ export class IosSimctlDriver implements Driver {
     osVersion: string,
     catalog: SimctlCatalog,
   ): VirtualSpec {
+    const family = familyOfModel(deviceType.name);
     if (!isVersionInRange(osVersion, deviceType)) {
-      throw new IosVersionOutOfRangeError(deviceType.name, osVersion, deviceType);
+      throw new IosVersionOutOfRangeError(family, deviceType.name, osVersion, deviceType);
     }
 
     // why: Looked up among the runtimes the catalog lists for this model, so a listed pair always
@@ -498,15 +503,15 @@ export class IosSimctlDriver implements Driver {
     // why: Installed but not paired: in the model's declared `[min, max]` range is necessary but not
     // sufficient, since `supportedDeviceTypeIds` is the authoritative source once a runtime is
     // on disk. Refused before committing, so a mismatch never reaches `simctl create`.
-    if (findInstalledRuntime(catalog, osVersion) !== undefined) {
-      throw new IosRuntimeUnpairedError(deviceType.name, osVersion);
+    if (findInstalledRuntime(catalog, osVersion, family) !== undefined) {
+      throw new IosRuntimeUnpairedError(family, deviceType.name, osVersion);
     }
 
     throw missingRuntime(
       osVersion,
-      `iOS ${osVersion} is not installed; pass --allow-download (or set downloads.policy) ` +
+      `${family} ${osVersion} is not installed; pass --allow-download (or set downloads.policy) ` +
         `to download it`,
-      osVersion,
+      componentName(family, osVersion),
     );
   }
 
@@ -516,13 +521,17 @@ export class IosSimctlDriver implements Driver {
       return this.#commitResolution(deviceType, paired);
     }
 
+    const family = familyOfModel(deviceType.name);
     throw missingRuntime(
       "default",
-      `No installed iOS runtime pairs with ${deviceType.name}; pass --allow-download (or ` +
+      `No installed ${family} runtime pairs with ${deviceType.name}; pass --allow-download (or ` +
         `set downloads.policy) to download a compatible runtime`,
-      isUnboundedMax(deviceType.maxRuntimeVersion)
-        ? LATEST_COMPONENT
-        : majorVersionString(deviceType.maxRuntimeVersion),
+      componentName(
+        family,
+        isUnboundedMax(deviceType.maxRuntimeVersion)
+          ? LATEST_COMPONENT
+          : majorVersionString(deviceType.maxRuntimeVersion),
+      ),
     );
   }
 
@@ -537,9 +546,14 @@ export class IosSimctlDriver implements Driver {
     return spec;
   }
 
+  componentOf(spec: Pick<VirtualSpec, "model" | "osVersion">): string {
+    return componentName(familyOfModel(spec.model), spec.osVersion);
+  }
+
   async findComponent(component: string): Promise<InstalledComponent | undefined> {
     const [catalog, images] = await Promise.all([this.#loadCatalog(), this.#loadRuntimeImages()]);
-    const runtime = findInstalledRuntime(catalog, component);
+    const { family, version } = parseComponent(component);
+    const runtime = findInstalledRuntime(catalog, version, family);
     return runtime === undefined ? undefined : installedComponent(runtime, images);
   }
 
@@ -550,25 +564,26 @@ export class IosSimctlDriver implements Driver {
       readonly signal: AbortSignal;
     },
   ): Promise<ComponentInstallResult> {
-    if (belowDownloadFloor(component)) {
-      throw new IosDownloadFloorError(component);
+    const { family, version } = parseComponent(component);
+    if (belowDownloadFloor(version)) {
+      throw new IosDownloadFloorError(family, version);
     }
     const before = await this.#installedReceipts();
     const args =
-      component === LATEST_COMPONENT
-        ? ["-downloadPlatform", "iOS"]
-        : ["-downloadPlatform", "iOS", "-buildVersion", component];
+      version === LATEST_COMPONENT
+        ? ["-downloadPlatform", family]
+        : ["-downloadPlatform", family, "-buildVersion", version];
     try {
       await this.#xcodebuildOrThrow(args, options);
     } catch (error: unknown) {
-      throw withBareMajorHint(component, error);
+      throw withBareMajorHint(family, version, error);
     }
 
     const [catalog, images] = await Promise.all([this.#loadCatalog(), this.#loadRuntimeImages()]);
-    const runtime = runtimeForComponent(catalog, component);
+    const runtime = runtimeForComponent(catalog, family, version);
     if (runtime === undefined) {
       throw new DriverCrashError(
-        `xcodebuild reported success but iOS ${component} is still not installed`,
+        `xcodebuild reported success but ${family} ${version} is still not installed`,
       );
     }
     const installed = installedComponent(runtime, images);
@@ -597,7 +612,7 @@ export class IosSimctlDriver implements Driver {
         await this.#waitWhileDeleting(image.identifier, version, deadline, options.signal);
         const sentences = [
           unavailableDevicesResidue(unusedDevices),
-          (await this.#downloadResidue(image, version)).residue,
+          (await this.#downloadResidue(image)).residue,
         ].filter((sentence) => sentence !== undefined);
         return sentences.length === 0 ? {} : { residue: sentences.join(". ") };
       },
@@ -685,14 +700,22 @@ export class IosSimctlDriver implements Driver {
     });
   }
 
-  async #downloadResidue(image: RuntimeImage, version: string): Promise<{ residue?: string }> {
-    const left = (await this.#downloadedRuntimeAssets()).filter((asset) =>
-      image.build === undefined ? asset.version === version : asset.build === image.build,
+  async #downloadResidue(
+    image: RuntimeImage & { readonly family: RuntimeFamily; readonly version: string },
+  ): Promise<{ residue?: string }> {
+    const { family, version } = image;
+    const left = (await this.#downloadedRuntimeAssets()).filter(
+      (asset) =>
+        asset.family === family &&
+        (image.build === undefined ? asset.version === version : asset.build === image.build),
     );
     if (left.length === 0) return {};
-    const label = image.build === undefined ? version : `${version} (${image.build})`;
+    const label =
+      image.build === undefined ? `${family} ${version}` : `${family} ${version} (${image.build})`;
     return {
-      residue: leftoverDownloadsSentence([label], left.length, await this.#assetsSize(left)),
+      residue: leftoverDownloadsSentence([label], left.length, await this.#assetsSize(left), [
+        assetRootOf(family),
+      ]),
     };
   }
 
@@ -721,28 +744,29 @@ export class IosSimctlDriver implements Driver {
       if (error instanceof DriverCrashError) throw error;
       throw new DriverCrashError(`Could not parse simctl device list: ${errorMessage(error)}`);
     }
-    return images.filter(isIosImage).flatMap((image): ListedImage[] =>
-      image.version === undefined
+    return images.flatMap((image): ListedImage[] => {
+      const family = familyOfImagePlatform(image.platformIdentifier);
+      return family === undefined || image.version === undefined
         ? []
         : [
             {
               foreignDevices: foreign.get(image.runtimeIdentifier)?.used ?? 0,
-              image,
+              image: { ...image, family, version: image.version },
               unusedDevices: images.some(
                 (other) =>
                   other !== image &&
-                  isIosImage(other) &&
+                  familyOfImagePlatform(other.platformIdentifier) !== undefined &&
                   other.runtimeIdentifier === image.runtimeIdentifier,
               )
                 ? 0
                 : (foreign.get(image.runtimeIdentifier)?.unused ?? 0),
               receipt: imageReceipt(image),
-              version: image.version,
+              version: componentName(family, image.version),
               ...(image.build === undefined ? {} : { variant: image.build }),
               ...(image.sizeBytes === undefined ? {} : { sizeBytes: image.sizeBytes }),
             },
-          ],
-    );
+          ];
+    });
   }
 
   async #installedReceipts(): Promise<readonly ComponentReceipt[]> {
@@ -792,6 +816,7 @@ export class IosSimctlDriver implements Driver {
     const buildVersionIndex = args.indexOf("-buildVersion");
     if (buildVersionIndex !== -1 && /is not available for download/.test(message)) {
       throw new IosRuntimeUnavailableForDownloadError(
+        args[args.indexOf("-downloadPlatform") + 1] ?? "iOS",
         args[buildVersionIndex + 1] ?? "requested version",
       );
     }
@@ -1577,7 +1602,10 @@ export class IosSimctlDriver implements Driver {
     const installedRuntimes = catalog.runtimes.filter((runtime) => runtime.isAvailable);
     const models = catalog.deviceTypes.map((deviceType) => deviceType.name);
     return {
-      defaultRuntime: newestRuntime(installedRuntimes)?.version,
+      // why: the platform's default is a phone's, so it is the newest iOS runtime; a tvOS version is
+      // only ever a model's own pairing.
+      defaultRuntime: newestRuntime(installedRuntimes.filter((runtime) => runtime.family === "iOS"))
+        ?.version,
       // why: Keyed by name and paired through the device type `resolveSpec` would pick for that name,
       // so two device types that differ only in letter case both list the first one's runtimes.
       // A device type answers to its name only, in any letter case (`findDeviceType`).
@@ -1592,7 +1620,9 @@ export class IosSimctlDriver implements Driver {
         models.map((model) => [model, pairedVersions(catalog, findDeviceType(catalog, model))]),
       ),
       models,
-      runtimes: installedRuntimes.map((runtime) => runtime.version),
+      // why: iOS and tvOS ship the same version numbers (ADR 0076), and `runtimes` is bare versions,
+      // so a version both families have installed is listed once.
+      runtimes: [...new Set(installedRuntimes.map((runtime) => runtime.version))],
       slimCategories: resolveSlimCategories(this.#slim?.categories).categories.map(
         (category) => category.name,
       ),
@@ -1649,12 +1679,16 @@ export class IosSimctlDriver implements Driver {
     // months reads in the order the downloads happened rather than as a lexicographic jumble.
     const described = [
       ...new Map(
-        orphans.map((asset) => [`${asset.version} (${asset.build})`, asset] as const),
+        orphans.map(
+          (asset) => [`${asset.family} ${asset.version} (${asset.build})`, asset] as const,
+        ),
       ).entries(),
     ]
       .sort(
         ([, left], [, right]) =>
-          compareVersions(left.version, right.version) || left.build.localeCompare(right.build),
+          left.family.localeCompare(right.family) ||
+          compareVersions(left.version, right.version) ||
+          left.build.localeCompare(right.build),
       )
       .map(([label]) => label);
     return [
@@ -1664,33 +1698,35 @@ export class IosSimctlDriver implements Driver {
           described,
           orphans.length,
           await this.#assetsSize(orphans),
+          [...new Set(orphans.map((asset) => assetRootOf(asset.family)))],
         ),
       },
     ];
   }
 
   async #downloadedRuntimeAssets(): Promise<readonly RuntimeAsset[]> {
-    let bundles: readonly string[];
-    try {
-      bundles = await this.#filesystem.readdir(IOS_RUNTIME_ASSET_ROOT);
-    } catch {
-      return [];
-    }
-
     const assets: RuntimeAsset[] = [];
-    for (const bundle of bundles.filter((name) => name.endsWith(".asset"))) {
-      let contents: string;
+    for (const family of RUNTIME_FAMILIES) {
+      const root = assetRootOf(family);
+      let bundles: readonly string[];
       try {
-        contents = await this.#filesystem.readFile(
-          join(IOS_RUNTIME_ASSET_ROOT, bundle, "Info.plist"),
-        );
+        bundles = await this.#filesystem.readdir(root);
       } catch {
         continue;
       }
 
-      const asset = parseRuntimeAsset(join(IOS_RUNTIME_ASSET_ROOT, bundle), contents);
-      if (asset !== undefined) {
-        assets.push(asset);
+      for (const bundle of bundles.filter((name) => name.endsWith(".asset"))) {
+        let contents: string;
+        try {
+          contents = await this.#filesystem.readFile(join(root, bundle, "Info.plist"));
+        } catch {
+          continue;
+        }
+
+        const asset = parseRuntimeAsset(join(root, bundle), contents, family);
+        if (asset !== undefined) {
+          assets.push(asset);
+        }
       }
     }
 
@@ -1706,7 +1742,7 @@ export class IosSimctlDriver implements Driver {
     const unsupportedVersions = [
       ...new Set(
         catalog.runtimes
-          .filter((runtime) => runtime.isAvailable)
+          .filter((runtime) => runtime.isAvailable && runtime.family === "iOS")
           .filter((runtime) => !supportsPersistentSlim(iosRuntimeVersionFromId(runtime.identifier)))
           .map((runtime) => runtime.version),
       ),
@@ -2116,13 +2152,14 @@ function missingRuntime(
   message: string,
   component: string,
 ): RuntimeMissingError {
-  return belowDownloadFloor(component)
-    ? new IosDownloadFloorError(component)
+  const { family, version } = parseComponent(component);
+  return belowDownloadFloor(version)
+    ? new IosDownloadFloorError(family, version)
     : new IosRuntimeMissingError(osVersion, message, component);
 }
 
-function belowDownloadFloor(component: string): boolean {
-  return component !== LATEST_COMPONENT && isTooOldToDownload(component);
+function belowDownloadFloor(version: string): boolean {
+  return version !== LATEST_COMPONENT && isTooOldToDownload(version);
 }
 
 class IosRuntimeMissingError extends RuntimeMissingError {
@@ -2140,34 +2177,34 @@ class IosUnknownModelError extends UnknownModelError {
 }
 
 class IosVersionOutOfRangeError extends RuntimeMissingError {
-  constructor(model: string, requested: string, deviceType: DeviceType) {
+  constructor(family: RuntimeFamily, model: string, requested: string, deviceType: DeviceType) {
     super("ios", requested, { downloadable: false });
     const range = formatVersionRange(deviceType.minRuntimeVersion, deviceType.maxRuntimeVersion);
-    this.message = `${model} supports iOS ${range}; iOS ${requested} is out of range`;
+    this.message = `${model} supports ${family} ${range}; ${family} ${requested} is out of range`;
   }
 }
 
 class IosRuntimeUnpairedError extends RuntimeMissingError {
-  constructor(model: string, requested: string) {
+  constructor(family: RuntimeFamily, model: string, requested: string) {
     super("ios", requested, { downloadable: false });
-    this.message = `iOS ${requested} is installed but does not support ${model}`;
+    this.message = `${family} ${requested} is installed but does not support ${model}`;
   }
 }
 
 class IosDownloadFloorError extends RuntimeMissingError {
-  constructor(requested: string) {
+  constructor(family: RuntimeFamily, requested: string) {
     super("ios", requested, { downloadable: false });
     this.message =
-      `iOS ${requested} predates Xcode's automatic download support (introduced for iOS ` +
-      `16.0 and newer); install it manually via Xcode`;
+      `${family} ${requested} predates Xcode's automatic download support (introduced for ` +
+      `${family} 16.0 and newer); install it manually via Xcode`;
   }
 }
 
 class IosRuntimeUnavailableForDownloadError extends RuntimeMissingError {
-  constructor(requested: string) {
+  constructor(family: string, requested: string) {
     super("ios", requested, { downloadable: false });
     this.message =
-      `iOS ${requested} is not currently offered for download by Apple (likely superseded by a ` +
+      `${family} ${requested} is not currently offered for download by Apple (likely superseded by a ` +
       `newer point release); request a different --os, or omit --os for the newest available runtime`;
   }
 }
@@ -2252,6 +2289,7 @@ function configuredDeviceRoot(options: IosSimctlDriverOptions): string {
 }
 
 function runtimeMountsAsset(runtime: Runtime, asset: RuntimeAsset): boolean {
+  if (runtime.family !== asset.family) return false;
   return runtime.build === undefined
     ? runtime.version === asset.version
     : runtime.build === asset.build;
@@ -2264,13 +2302,19 @@ function runtimeMountsAsset(runtime: Runtime, asset: RuntimeAsset): boolean {
  * every runtime ever downloaded. Both keys are read from `MobileAssetProperties` onwards, so a
  * same-named key in the surrounding envelope cannot be mistaken for the asset's own.
  */
-function parseRuntimeAsset(path: string, plist: string): RuntimeAsset | undefined {
+function parseRuntimeAsset(
+  path: string,
+  plist: string,
+  family: RuntimeFamily,
+): RuntimeAsset | undefined {
   const propertiesAt = plist.indexOf("<key>MobileAssetProperties</key>");
   const properties = propertiesAt === -1 ? plist : plist.slice(propertiesAt);
   const build = /<key>Build<\/key>\s*<string>([^<]+)<\/string>/.exec(properties)?.[1];
   const version = /<key>SimulatorVersion<\/key>\s*<string>([^<]+)<\/string>/.exec(properties)?.[1];
 
-  return build === undefined || version === undefined ? undefined : { build, path, version };
+  return build === undefined || version === undefined
+    ? undefined
+    : { build, family, path, version };
 }
 
 interface RuntimeImage {
@@ -2286,8 +2330,6 @@ interface RuntimeImage {
 function isBeingDeleted(image: RuntimeImage): boolean {
   return image.state?.toLowerCase() === "deleting";
 }
-
-const IOS_SIMULATOR_PLATFORM = "com.apple.platform.iphonesimulator";
 
 function parseRuntimeImages(value: unknown): readonly RuntimeImage[] {
   if (!isRecord(value)) {
@@ -2338,12 +2380,8 @@ function imageReceipt(image: RuntimeImage): ComponentReceipt {
   return { build: image.build ?? "", image: image.identifier };
 }
 
-function isIosImage(image: RuntimeImage): boolean {
-  return image.platformIdentifier === IOS_SIMULATOR_PLATFORM;
-}
-
 type ListedImage = DriverComponent & {
-  readonly image: RuntimeImage;
+  readonly image: RuntimeImage & { readonly family: RuntimeFamily; readonly version: string };
   readonly unusedDevices: number;
 };
 
@@ -2351,6 +2389,7 @@ function leftoverDownloadsSentence(
   labels: readonly string[],
   bundles: number,
   sizeBytes: number | undefined,
+  roots: readonly string[],
 ): string {
   const runtimes = labels.length > 1;
   const downloads = bundles > 1;
@@ -2359,9 +2398,9 @@ function leftoverDownloadsSentence(
       ? ""
       : ` (${(sizeBytes / 1024 ** 3).toFixed(1)} GiB${downloads ? " in all" : ""})`;
   return (
-    `iOS ${labels.join(", ")} ${runtimes ? "are" : "is"} no longer installed, but ` +
+    `${labels.join(", ")} ${runtimes ? "are" : "is"} no longer installed, but ` +
     `${runtimes ? "their" : "its"} ${downloads ? "downloads" : "download"}${size} ` +
-    `${downloads ? "are" : "is"} still in ${IOS_RUNTIME_ASSET_ROOT}; ` +
+    `${downloads ? "are" : "is"} still in ${roots.join(" and ")}; ` +
     `\`simctl runtime delete\` does not reclaim ${downloads ? "them" : "it"} and Simlock does ` +
     "not delete files there -- remove the platform in Xcode's Settings -> Platforms to get " +
     "the space back"
@@ -2406,31 +2445,44 @@ function devicesPerRuntime(
 }
 
 function installedComponent(runtime: Runtime, images: readonly RuntimeImage[]): InstalledComponent {
-  return { receipt: runtimeReceipt(runtime, images), version: runtime.version };
+  return {
+    receipt: runtimeReceipt(runtime, images),
+    version: componentName(runtime.family, runtime.version),
+  };
 }
 
-function withBareMajorHint(component: string, error: unknown): unknown {
-  if (component === LATEST_COMPONENT || component.includes(".")) return error;
+function withBareMajorHint(family: RuntimeFamily, version: string, error: unknown): unknown {
+  if (version === LATEST_COMPONENT || version.includes(".")) return error;
   if (!(error instanceof DriverCrashError)) return error;
   return new DriverCrashError(
-    `Could not download a default iOS runtime (tried ${component}): ${error.message}; ` +
+    `Could not download a default ${family} runtime (tried ${version}): ${error.message}; ` +
       `pass --os <version> to request an exact release`,
   );
 }
 
-function runtimeForComponent(catalog: SimctlCatalog, component: string): Runtime | undefined {
-  const available = catalog.runtimes.filter((runtime) => runtime.isAvailable);
-  if (component === LATEST_COMPONENT) return newestRuntime(available);
-  if (!component.includes(".")) {
-    return newestRuntime(
-      available.filter((runtime) => runtime.version.split(".")[0] === component),
-    );
+function runtimeForComponent(
+  catalog: SimctlCatalog,
+  family: RuntimeFamily,
+  version: string,
+): Runtime | undefined {
+  const available = catalog.runtimes.filter(
+    (runtime) => runtime.isAvailable && runtime.family === family,
+  );
+  if (version === LATEST_COMPONENT) return newestRuntime(available);
+  if (!version.includes(".")) {
+    return newestRuntime(available.filter((runtime) => runtime.version.split(".")[0] === version));
   }
-  return findInstalledRuntime(catalog, component);
+  return findInstalledRuntime(catalog, version, family);
 }
 
-function findInstalledRuntime(catalog: SimctlCatalog, version: string): Runtime | undefined {
-  return catalog.runtimes.find((runtime) => runtime.isAvailable && runtime.version === version);
+function findInstalledRuntime(
+  catalog: SimctlCatalog,
+  version: string,
+  family: RuntimeFamily,
+): Runtime | undefined {
+  return catalog.runtimes.find(
+    (runtime) => runtime.isAvailable && runtime.family === family && runtime.version === version,
+  );
 }
 
 function findDeviceType(catalog: SimctlCatalog, model: string): DeviceType | undefined {

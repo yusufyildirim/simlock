@@ -756,6 +756,10 @@ export class AndroidDriver implements Driver {
     return this.#systemImages.toolVersions();
   }
 
+  componentOf(spec: Pick<VirtualSpec, "model" | "osVersion">): string {
+    return spec.osVersion;
+  }
+
   async findComponent(component: string): Promise<InstalledComponent | undefined> {
     return this.#systemImages.findComponent(component);
   }

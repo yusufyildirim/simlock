@@ -17,6 +17,7 @@ import type {
   Logger,
   ProcessRunner,
 } from "../../../ports/index.js";
+import { familyOfRuntimeId, type RuntimeFamily } from "../runtime-family.js";
 import { iosRuntimeVersionFromId } from "../runtime-version.js";
 import { stopProgram } from "../screen-capture.js";
 
@@ -36,7 +37,14 @@ const HOME_TIMEOUT_MS = 10_000;
 // why: the helper sets up its HID client before it reports a size; one that never does is stuck, and
 // the open must not wait on it (architecture rule 11).
 const READY_DEADLINE_MS = 10_000;
-const SPRINGBOARD = "com.apple.springboard";
+// why: the app `simctl launch` brings forward for Home: SpringBoard on iOS, HeadBoard on tvOS, where
+// launching SpringBoard fails.
+const HOME_APPS: Readonly<Record<RuntimeFamily, string>> = {
+  iOS: "com.apple.springboard",
+  tvOS: "com.apple.HeadBoard",
+};
+// why: the tvOS simulator reads the keyboard's Escape as the remote's Menu button, which is Back.
+const TV_MENU_USAGE = 0x29;
 
 export function createIosDeviceInput(options: IosDeviceInputOptions): DeviceInputFactory {
   return {
@@ -56,12 +64,13 @@ export function createIosDeviceInput(options: IosDeviceInputOptions): DeviceInpu
         await stopProgram(child, options.clock);
         throw error;
       }
+      const family = deviceFamily(device);
       return new IosDeviceInput(
         options,
         device.deviceId,
         child,
         size,
-        keysAvailable(device),
+        { family, keys: keysAvailable(family, device) },
         sizes,
       );
     },
@@ -77,12 +86,22 @@ function environmentFor(options: IosDeviceInputOptions): NodeJS.ProcessEnv {
     : { ...environment, SIMLOCK_IOS_DEVICE_SET: options.deviceSet };
 }
 
-// why: the iOS 27 guest ignores injected keys (F21), so keys are dropped there; a runtime that cannot
-// be read is treated the same, because a key that does nothing is worse than a key refused.
-function keysAvailable(device: VirtualDriverDevice | PhysicalDriverDevice): boolean {
+function runtimeIdOf(device: VirtualDriverDevice): string {
   const data = device.driverData as { runtimeId?: unknown } | null;
-  const runtimeId = typeof data?.runtimeId === "string" ? data.runtimeId : "";
-  const version = iosRuntimeVersionFromId(runtimeId);
+  return typeof data?.runtimeId === "string" ? data.runtimeId : "";
+}
+
+// why: a runtime that cannot be read is an iPhone's: the input then behaves as it did before tvOS.
+function deviceFamily(device: VirtualDriverDevice): RuntimeFamily {
+  return familyOfRuntimeId(runtimeIdOf(device)) ?? "iOS";
+}
+
+// why: the iOS 27 guest ignores injected keys (F21), so keys are dropped there; a runtime that cannot
+// be read is treated the same, because a key that does nothing is worse than a key refused. The tvOS
+// guest takes them: they are its remote.
+function keysAvailable(family: RuntimeFamily, device: VirtualDriverDevice): boolean {
+  if (family === "tvOS") return true;
+  const version = iosRuntimeVersionFromId(runtimeIdOf(device));
   return version !== undefined && version[0] < 27;
 }
 
@@ -187,6 +206,7 @@ class IosDeviceInput implements DeviceInput {
   readonly #child: BytePipeProcess;
   #config: InputScreenConfig;
   readonly #keys: boolean;
+  readonly #family: RuntimeFamily;
   readonly #configListeners = new Set<(config: InputScreenConfig) => void>();
   readonly #failedListeners = new Set<(error: Error) => void>();
   #closing: Promise<void> | undefined;
@@ -196,10 +216,11 @@ class IosDeviceInput implements DeviceInput {
     udid: string,
     child: BytePipeProcess,
     size: InputScreenConfig,
-    keys: boolean,
+    { family, keys }: { readonly family: RuntimeFamily; readonly keys: boolean },
     sizes: AsyncGenerator<InputScreenConfig>,
   ) {
     this.#keys = keys;
+    this.#family = family;
     this.#config = this.#withKeys(size);
     void this.#follow(sizes);
     void child.exited.then((exit) => {
@@ -227,10 +248,23 @@ class IosDeviceInput implements DeviceInput {
   send(message: InputMessage): Promise<void> {
     if (message.kind === "button") {
       if (message.button === "home") this.#home();
+      if (message.button === "back" && this.#family === "tvOS") return this.#menu();
       return Promise.resolve();
     }
+    // why: an Apple TV has no touch surface and does not rotate; a tap reaches its guest as a press
+    // that leaves the app on screen, so only keys go to it.
+    if (this.#family === "tvOS" && message.kind !== "key") return Promise.resolve();
     if (message.kind === "key" && !this.#keys) return Promise.resolve();
-    return this.#child.writeStdin(frameOfMessage(message)).catch((error: unknown) => {
+    return this.#write(frameOfMessage(message));
+  }
+
+  async #menu(): Promise<void> {
+    await this.#write(frameOf(INPUT_TAG.key, { type: "down", usage: TV_MENU_USAGE }));
+    await this.#write(frameOf(INPUT_TAG.key, { type: "up", usage: TV_MENU_USAGE }));
+  }
+
+  #write(frame: Uint8Array): Promise<void> {
+    return this.#child.writeStdin(frame).catch((error: unknown) => {
       const failure = new Error(
         `The input helper stopped taking input: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -239,7 +273,7 @@ class IosDeviceInput implements DeviceInput {
     });
   }
 
-  // why: Xcode 26 and later silently drop the HID home-button press, so Home brings SpringBoard
+  // why: Xcode 26 and later silently drop the HID home-button press, so Home brings the home app
   // forward the way serve-sim does; the app switcher and Lock have no such way and are dropped.
   #home(): void {
     const { deviceSet, logger, processRunner } = this.#options;
@@ -248,7 +282,7 @@ class IosDeviceInput implements DeviceInput {
       ...(deviceSet === undefined ? [] : ["--set", deviceSet]),
       "launch",
       this.#udid,
-      SPRINGBOARD,
+      HOME_APPS[this.#family],
     ];
     void processRunner.run("xcrun", args, { timeoutMs: HOME_TIMEOUT_MS }).then(
       (result) => {

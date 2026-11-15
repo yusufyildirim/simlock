@@ -269,7 +269,13 @@ own that one of them draws. Named sizes and colours are above.
   watching and `⋯`; no state pill by the device name (the facts show the state).
   The frame stays centred in its card whatever the state: a refusal or notice is
   drawn inside the phone's screen, centred, wrapping and muted, as the daemon's
-  sentence without its transport prefix (`The daemon answered 404 ...`). View only. The device drawer has no Screen tab; an old
+  sentence without its transport prefix (`The daemon answered 404 ...`). A leased
+  device whose worker takes input gets a Remote card under the Holder card
+  (ADR 0077): a TV a 132px D-pad ring (four 44px arrow keys round a round
+  Select) over a row of small secondary buttons (Menu or Back, Home, Lock on
+  Android TV), another device the buttons only, then one muted centred line
+  that says what the socket says; while a TV's remote takes keys the stage is
+  a focusable group with a 2px accent focus ring. No touch. The device drawer has no Screen tab; an old
   `?drawer=screen` link redirects here.
 - **Chart.** Recharts. Line and area in `--accent` with a 9% fill, bars in
   `--slot-leased` at 55% with the current bucket in `--accent`, grid lines

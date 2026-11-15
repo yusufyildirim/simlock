@@ -58,7 +58,7 @@ and tvOS, and each fact names its family in one place:
 A model pairs only with runtimes of its family. A runtime of any other
 family (watchOS, visionOS) is not listed at all. `osVersion` stays a bare
 version (`27.0`), so the OS grammar, `--os` and the catalog's `runtimes`
-do not change; `runtimes` lists every installed version, both families,
+do not change; `runtimes` lists every installed version of both families, each once,
 and `defaultRuntime` is the newest iOS one.
 
 The model is read from its name because core asks a device's component

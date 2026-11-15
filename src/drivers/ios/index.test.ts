@@ -2218,7 +2218,7 @@ describe("IosSimctlDriver", () => {
 
       const catalog = await driver.listCatalog();
 
-      expect(catalog.runtimes).toEqual(["18.4", "26.0", "26.0"]);
+      expect(catalog.runtimes).toEqual(["18.4", "26.0"]);
       expect(catalog.modelRuntimes).toEqual({
         "iPhone 16": ["18.4", "26.0"],
         "iPhone XS": ["18.4"],
@@ -2228,7 +2228,7 @@ describe("IosSimctlDriver", () => {
       });
     });
 
-    it("pairs an Apple TV only with tvOS runtimes and an iPhone only with iOS ones, keeps the iOS default when a tvOS runtime is newer, and lists no watchOS runtime", async () => {
+    it("pairs an Apple TV only with tvOS runtimes and an iPhone only with iOS ones, keeps the iOS default when a tvOS runtime is newer, lists a version both families have once, and lists no watchOS runtime", async () => {
       const driver = await createDriver(
         new ScriptedProcessRunner([
           { match: listInvocation, result: { code: 0, stderr: "", stdout: tvFixture } },
@@ -2242,7 +2242,7 @@ describe("IosSimctlDriver", () => {
         "iPhone 16": ["27.0"],
       });
       expect(catalog.modelClasses["Apple TV 4K (3rd generation)"]).toBe("tv");
-      expect(catalog.runtimes).toEqual(["27.0", "27.0", "27.1"]);
+      expect(catalog.runtimes).toEqual(["27.0", "27.1"]);
       expect(catalog.defaultRuntime).toBe("27.0");
     });
 

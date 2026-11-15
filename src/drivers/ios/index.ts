@@ -1620,7 +1620,9 @@ export class IosSimctlDriver implements Driver {
         models.map((model) => [model, pairedVersions(catalog, findDeviceType(catalog, model))]),
       ),
       models,
-      runtimes: installedRuntimes.map((runtime) => runtime.version),
+      // why: iOS and tvOS ship the same version numbers (ADR 0076), and `runtimes` is bare versions,
+      // so a version both families have installed is listed once.
+      runtimes: [...new Set(installedRuntimes.map((runtime) => runtime.version))],
       slimCategories: resolveSlimCategories(this.#slim?.categories).categories.map(
         (category) => category.name,
       ),
